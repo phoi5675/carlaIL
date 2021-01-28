@@ -6,6 +6,8 @@
 
 collect data from carla based on [carla imitation learning](https://github.com/carla-simulator/imitation-learning)
 
+data order is same as above page, but the values may differ or not be collected.
+
 
 code is based on [manual_control.py](https://github.com/carla-simulator/carla/blob/master/PythonAPI/examples/manual_control.py)
 
