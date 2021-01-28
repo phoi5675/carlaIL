@@ -247,6 +247,110 @@ class World(object):
 
 
 # ==============================================================================
+# -- JoyStickControl -----------------------------------------------------------
+# ==============================================================================
+
+class JoyStickControl(object):
+    def __init__(self, world, start_in_autopilot):
+        self._autopilot_enabled = start_in_autopilot
+        if isinstance(world.player, carla.Vehicle):
+            self._control = carla.VehicleControl()
+            world.player.set_autopilot(self._autopilot_enabled)
+        elif isinstance(world.player, carla.Walker):
+            self._control = carla.WalkerControl()
+            self._autopilot_enabled = False
+            self._rotation = world.player.get_transform().rotation
+        else:
+            raise NotImplementedError("Actor type not supported")
+        self._steer_cache = 0.0
+        pygame.joystick.init()
+        self.joystick = pygame.joystick.Joystick(0)
+        world.hud.notification("Press 'H' or '?' for help.", seconds=4.0)
+
+    def parse_events(self, client, world, clock):
+        # AXIS_X : -1 : left, 1 : right
+        # AXIS_Y : -1 : front, 1 : back
+        # TRIGGER : -1 : not pushed, 1 : pushed
+        LEFT_AXIS_X = 0
+        LEFT_AXIS_Y = 1
+        LEFT_TRIGGER = 2
+        RIGHT_AXIS_X = 3
+        RIGHT_AXIS_Y = 4
+        RIGHT_TRIGGER = 5
+        BTN_A = 0
+        BTN_B = 1
+        BTN_X = 2
+        BTN_Y = 3
+        BTN_LB = 4
+        BTN_RB = 5
+        BTN_SEL = 6
+        BTN_START = 7
+        BTN_XBOX = 8
+        BTN_LAXIS = 9
+        BTN_RAXIS = 10
+
+        l_axis_x = self.joystick.get_axis(LEFT_AXIS_X)
+        l_axis_y = self.joystick.get_axis(LEFT_AXIS_Y)
+        l_trigger = self.joystick.get_axis(LEFT_TRIGGER)
+        r_axis_x = self.joystick.get_axis(RIGHT_AXIS_X)
+        r_axis_y = self.joystick.get_axis(RIGHT_AXIS_Y)
+        r_trigger = self.joystick.get_axis(RIGHT_TRIGGER)
+        btn_a = self.joystick.get_button(BTN_A)
+        btn_b = self.joystick.get_button(BTN_B)
+        btn_x = self.joystick.get_button(BTN_X)
+        btn_y = self.joystick.get_button(BTN_Y)
+        btn_lb = self.joystick.get_button(BTN_LB)
+        btn_rb = self.joystick.get_button(BTN_RB)
+        btn_sel = self.joystick.get_button(BTN_SEL)
+        btn_start = self.joystick.get_button(BTN_START)
+        btn_xbox = self.joystick.get_button(BTN_XBOX)
+        btn_laxis = self.joystick.get_button(BTN_LAXIS)
+        btn_raxis = self.joystick.get_button(BTN_RAXIS)
+
+        # adjust trigger value : -1.0 ~ 1.0 to 0.0 ~ 1.0
+        r_trigger = (r_trigger + 1) / 2.0
+        l_trigger = (l_trigger + 1) / 2.0
+
+        # adjust axis : axis < 0.1 -> dead zone
+        l_axis_x = 0.0 if -0.1 < l_axis_x < 0.1 else l_axis_x
+        l_axis_y = 0.0 if -0.1 < l_axis_y < 0.1 else l_axis_y
+        r_axis_x = 0.0 if -0.1 < r_axis_x < 0.1 else r_axis_x
+        r_axis_y = 0.0 if -0.1 < r_axis_y < 0.1 else r_axis_y
+
+        # adjust axis sensitivity
+        l_axis_x = l_axis_x * 0.35
+
+        # control car
+        if not self._autopilot_enabled:
+            if isinstance(self._control, carla.VehicleControl):
+                self._control.throttle = r_trigger
+                self._control.brake = l_trigger
+                self._control.steer = l_axis_x
+                if btn_laxis:
+                    self._control.gear = 1 if self._control.reverse else -1
+                self._control.reverse = self._control.gear < 0
+
+            world.player.apply_control(self._control)
+
+        # high level command for Recorder
+        # TODO Recorder.VOID 값 버튼에 맞게 변경하기
+        if btn_a:
+            Recorder.high_level_com = Recorder.VOID
+        elif btn_b:
+            Recorder.high_level_com = Recorder.VOID
+        elif btn_x:
+            Recorder.high_level_com = Recorder.VOID
+        elif btn_y:
+            Recorder.high_level_com = Recorder.VOID
+        elif btn_lb:
+            Recorder.high_level_com = Recorder.VOID
+        elif btn_rb:
+            Recorder.high_level_com = Recorder.VOID
+        elif btn_start:
+            Recorder.high_level_com = Recorder.VOID
+
+
+# ==============================================================================
 # -- KeyboardControl -----------------------------------------------------------
 # ==============================================================================
 
@@ -255,7 +359,7 @@ class KeyboardControl(object):
     def __init__(self, world, start_in_autopilot):
         self._autopilot_enabled = start_in_autopilot
         if isinstance(world.player, carla.Vehicle):
-            self._control = carla.VehicleControl()
+            # self._control = carla.VehicleControl()
             world.player.set_autopilot(self._autopilot_enabled)
         elif isinstance(world.player, carla.Walker):
             self._control = carla.WalkerControl()
@@ -327,7 +431,7 @@ class KeyboardControl(object):
                     else:
                         world.recording_start += 1
                     world.hud.notification("Recording start time is %d" % (world.recording_start))
-
+        '''
                 # gear control
                 if isinstance(self._control, carla.VehicleControl):
                     if event.key == K_q:
@@ -348,7 +452,7 @@ class KeyboardControl(object):
         # control car
         if not self._autopilot_enabled:
             if isinstance(self._control, carla.VehicleControl):
-                self._parse_vehicle_keys(pygame.key.get_pressed(), clock.get_time())
+                # self._parse_vehicle_keys(pygame.key.get_pressed(), clock.get_time())
                 self._control.reverse = self._control.gear < 0
             elif isinstance(self._control, carla.WalkerControl):
                 self._parse_walker_keys(pygame.key.get_pressed(), clock.get_time())
@@ -383,7 +487,7 @@ class KeyboardControl(object):
         self._control.jump = keys[K_SPACE]
         self._rotation.yaw = round(self._rotation.yaw, 1)
         self._control.direction = self._rotation.get_forward_vector()
-
+    '''
     @staticmethod
     def _is_quit_shortcut(key):
         return (key == K_ESCAPE) or (key == K_q and pygame.key.get_mods() & KMOD_CTRL)
@@ -849,8 +953,8 @@ class FrontCamera(object):
             image.convert(cc.Raw)
             array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
             array = np.reshape(array, (image.height, image.width, 4))
-            array = array[image_cut[0]:image_cut[1], :, :3] # 필요 없는 부분을 잘라내고
-            array = array[:, :, ::-1] # 채널 색상 순서 변경? 안 하면 색 이상하게 출력
+            array = array[image_cut[0]:image_cut[1], :, :3]  # 필요 없는 부분을 잘라내고
+            array = array[:, :, ::-1]  # 채널 색상 순서 변경? 안 하면 색 이상하게 출력
 
             image_pil = Image.fromarray(array.astype('uint8'), 'RGB')
             image_pil = image_pil.resize((image_resize[1], image_resize[0]))  # 원하는 크기로 리사이즈

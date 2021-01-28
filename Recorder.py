@@ -3,6 +3,16 @@ from PIL import Image
 
 
 class Recorder(object):
+    # High-level commands
+    VOID = -1
+    LEFT = 1
+    RIGHT = 2
+    STRAIGHT = 3
+    CHANGELEFT = 4
+    CHANGERIGHT = 5
+    LANEFOLLOW = 6
+    TRLIGHT_STOP = 7  # 이거 제외하고 나머지는 원래 있던 변수
+
     # 순서는 carla IL 의 datasheet 순서를 따름
     image = None
 
@@ -73,7 +83,6 @@ class Recorder(object):
         Recorder.orientation_x = t.rotation.roll
         Recorder.orientation_y = t.rotation.pitch
         Recorder.orientation_z = t.rotation.yaw
-        # TODO high-level command 는 나중에 입력 부분에서 설정해야 함
 
         for _list in DATA_ARY:
             print(_list, end=' ')
