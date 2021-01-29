@@ -320,6 +320,9 @@ class JoyStickControl(object):
         # adjust axis sensitivity
         l_axis_x = l_axis_x * 0.35
 
+        # adjust trigger sensitivity
+        r_trigger = r_trigger * 0.7  # to reduce maximum speed
+
         # control car
         if not self._autopilot_enabled:
             if isinstance(self._control, carla.VehicleControl):
@@ -920,7 +923,7 @@ class FrontCamera(object):
         world = self._parent.get_world()
         self.blueprint = world.get_blueprint_library().find('sensor.camera.rgb')
         self.blueprint.set_attribute('role_name', 'front_camera')  # role_name 설정
-        # self.blueprint.set_attribute('sensor_tick', 0.05)
+        self.blueprint.set_attribute('sensor_tick', str(0.1))
         self.blueprint.set_attribute('image_size_x', str(800))
         self.blueprint.set_attribute('image_size_y', str(600))
         self.blueprint.set_attribute('fov', str(100))
@@ -959,4 +962,5 @@ class FrontCamera(object):
             image_pil = Image.fromarray(array.astype('uint8'), 'RGB')
             image_pil = image_pil.resize((image_resize[1], image_resize[0]))  # 원하는 크기로 리사이즈
             # image_pil.save('output/%06d.png' % image.frame)
-            Recorder.image = image_pil  # Recorder 로 이미지 전송
+            np_image = np.array(image_pil, dtype=np.dtype("uint8"))
+            Recorder.image = np_image  # Recorder 로 이미지 전송

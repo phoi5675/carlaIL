@@ -1,5 +1,7 @@
 import math
-from PIL import Image
+import numpy as np
+import h5py
+import os
 
 
 class Recorder(object):
@@ -47,8 +49,30 @@ class Recorder(object):
     camera = 0  # not used
     angle = 0  # not used
 
+    # h5 파일에 저장 할 때, 데이터를 200개씩 모아서 한 번에 저장
+    SAVE_IMG_ARY = []
+    SAVE_DATA_ARY = []
+    DATA_LEN = 200
+
     @staticmethod
     def record(world):
+        def _save_h5_file():
+            file_path = os.getcwd() + '/output/'
+            c = len(os.listdir(file_path))
+            # file name : data_#####.h5
+            file_name = file_path + 'data_{0:05d}.h5'.format(c)
+
+            with h5py.File(file_name, 'w') as f:
+                # 이미지 저장 순서는 개수 * 세로 * 가로 * RGB (h5 파일은 행렬 방식으로 해석)
+                save_img_ary = np.array(Recorder.SAVE_IMG_ARY)
+                print(type(save_img_ary))
+                f.create_dataset('rgb', data=save_img_ary)
+                # img_dset = f.create_dataset('rgb', shape=(200, 88, 200, 3), dtype='uint8')
+                f.create_dataset('targets', data=Recorder.SAVE_DATA_ARY, dtype=float)
+
+        def _clear_save_ary():
+            Recorder.SAVE_DATA_ARY.clear()
+            Recorder.SAVE_IMG_ARY.clear()
         DATA_ARY = [Recorder.steer, Recorder.gas, Recorder.brake, Recorder.hand_brake, Recorder.reverse_gear,
                     Recorder.steer_noise, Recorder.gas_noise, Recorder.brake_noise,
                     Recorder.x_pos, Recorder.y_pos, Recorder.speed,
@@ -84,8 +108,22 @@ class Recorder(object):
         Recorder.orientation_y = t.rotation.pitch
         Recorder.orientation_z = t.rotation.yaw
 
+        # boolean 값은 0.0 or 1.0 으로 저장
+        # 배열 내용 추가
+        if len(Recorder.SAVE_IMG_ARY) < Recorder.DATA_LEN:
+            Recorder.SAVE_IMG_ARY.append(Recorder.image)
+        if len(Recorder.SAVE_DATA_ARY) < Recorder.DATA_LEN:
+            Recorder.SAVE_DATA_ARY.append(DATA_ARY)
+        # TODO and 로 했을 때 문제 없는지 확인
+        if len(Recorder.SAVE_IMG_ARY) == Recorder.DATA_LEN \
+                and len(Recorder.SAVE_DATA_ARY) == Recorder.DATA_LEN:
+            _save_h5_file()
+            _clear_save_ary()
+
+        '''
         for _list in DATA_ARY:
             print(_list, end=' ')
         print('\n')
         if Recorder.image is not None:  # 동기화 문제 때문에 image 가 None 상태 유지되는 경우 예방
             Recorder.image.save('output/%.3f.png' % Recorder.platform_time)
+        '''

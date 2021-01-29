@@ -40,11 +40,12 @@ def game_loop(args):
             pygame.HWSURFACE | pygame.DOUBLEBUF)
 
         hud = HUD(args.width, args.height)
+        # TODO 본 테스트 할 때는 sync 모드 켜기
         # set synchronous mode
         server_world = client.get_world()
         settings = server_world.get_settings()
-        # settings.synchronous_mode = True
-        # settings.fixed_delta_seconds = 0.05
+        settings.synchronous_mode = True
+        settings.fixed_delta_seconds = 0.05
 
         server_world.apply_settings(settings)
 
@@ -61,13 +62,13 @@ def game_loop(args):
             if controller.parse_events(client, world, clock):
                 return
             world.tick(clock)
-            # server_world.tick()  # 서버 시간 tick
+            server_world.tick()  # 서버 시간 tick
 
             # 화면 제외 다른 데이터 녹화
             if world.recording_enabled and tick_double_time:
                 Recorder.record(world)
                 tick_double_time = False
-            if tick_double_time is False:  # 스위치 기능을 이용해 time_step 을 0.05초의 두 배로 설정
+            elif tick_double_time is False:  # 스위치 기능을 이용해 time_step 을 0.05초의 두 배로 설정
                 tick_double_time = True
 
             world.render(display)
