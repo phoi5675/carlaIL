@@ -16,3 +16,5 @@ code is based on [manual_control.py](https://github.com/carla-simulator/carla/bl
 - Carla 0.9.X (this code is based on 0.9.6)
 - PIL
 - pygame
+- numpy
+- h5py
