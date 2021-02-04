@@ -162,7 +162,7 @@ def game_loop(args):
 
             # 화면 제외 다른 데이터 녹화
             if world.recording_enabled and tick_double_time:
-                Recorder.record(world, agent)
+                Recorder.record(world, path=args.path, agent=agent)
                 tick_double_time = False
             elif tick_double_time is False:  # 스위치 기능을 이용해 time_step 을 0.05초의 두 배로 설정
                 tick_double_time = True
@@ -242,6 +242,10 @@ def main():
         '--autopilot',
         action='store_true',
         help='enable autopilot')
+    argparser.add_argument(
+        '--path',
+        default='output/',
+        help='path for saving data')
     args = argparser.parse_args()
 
     args.width, args.height = [int(x) for x in args.res.split('x')]

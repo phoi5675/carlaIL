@@ -62,11 +62,11 @@ def game_loop(args):
             if controller.parse_events(client, world, clock):
                 return
             world.tick(clock)
-            server_world.tick()  # 서버 시간 tick
+            # server_world.tick()  # 서버 시간 tick
 
             # 화면 제외 다른 데이터 녹화
             if world.recording_enabled and tick_double_time:
-                Recorder.record(world)
+                Recorder.record(world, path=args.path)
                 tick_double_time = False
             elif tick_double_time is False:  # 스위치 기능을 이용해 time_step 을 0.05초의 두 배로 설정
                 tick_double_time = True
@@ -127,6 +127,10 @@ def main():
         default=2.2,
         type=float,
         help='Gamma correction of the camera (default: 2.2)')
+    argparser.add_argument(
+        '--path',
+        default='output/',
+        help='path for saving data')
     args = argparser.parse_args()
 
     args.width, args.height = [int(x) for x in args.res.split('x')]

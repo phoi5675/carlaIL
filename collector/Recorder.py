@@ -63,9 +63,9 @@ class Recorder(object):
     DATA_LEN = 200
 
     @staticmethod
-    def record(world, agent=None):
+    def record(world, path='output/', agent=None):
         def _save_h5_file():
-            file_path = os.getcwd() + '/output/'
+            file_path = os.getcwd() + '/' + path
             c = len(os.listdir(file_path))
             # file name : data_#####.h5
             file_name = file_path + 'data_{0:05d}.h5'.format(c)
@@ -76,7 +76,7 @@ class Recorder(object):
                 print(file_name)
                 f.create_dataset('rgb', data=save_img_ary)
                 # img_dset = f.create_dataset('rgb', shape=(200, 88, 200, 3), dtype='uint8')
-                f.create_dataset('targets', data=Recorder.SAVE_DATA_ARY, dtype=float)
+                f.create_dataset('targets', data=Recorder.SAVE_DATA_ARY, dtype=np.float32)
 
         def _clear_save_ary():
             Recorder.SAVE_DATA_ARY.clear()

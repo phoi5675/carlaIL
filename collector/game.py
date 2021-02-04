@@ -807,6 +807,11 @@ class LaneInvasionSensor(object):
         text = ['%r' % str(x).split()[-1] for x in lane_types]
         self.hud.notification('Crossed line %s' % ' and '.join(text))
 
+        if 'NONE' in text[0]:
+            Recorder.sidewalk_intersect = 0.1
+        elif 'Broken' in text[0]:
+            Recorder.opposite_line_enter = 0.1
+
 
 # ==============================================================================
 # -- GnssSensor --------------------------------------------------------
