@@ -116,7 +116,6 @@ class BasicAgent(Agent):
             self._state = AgentState.BLOCKED_RED_LIGHT
             hazard_detected = True
         '''
-
         if hazard_detected:
             control = self.emergency_stop()
         else:

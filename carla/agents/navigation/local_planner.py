@@ -81,6 +81,8 @@ class LocalPlanner(object):
         # initializing controller
         self._init_controller(opt_dict)
 
+        self.high_level_command = None
+
     def __del__(self):
         if self._vehicle:
             self._vehicle.destroy()
@@ -181,6 +183,8 @@ class LocalPlanner(object):
 
     def set_global_plan(self, current_plan):
         self._waypoints_queue.clear()
+        self._waypoint_buffer.clear()
+        self.target_waypoint = None
         for elem in current_plan:
             self._waypoints_queue.append(elem)
         self._target_road_option = RoadOption.LANEFOLLOW
@@ -235,7 +239,7 @@ class LocalPlanner(object):
                 max_index = i
         if max_index >= 0:
             for i in range(max_index + 1):
-                self._waypoint_buffer.popleft()
+                self.high_level_command = self._waypoint_buffer.popleft()
 
         if debug:
             draw_waypoints(self._vehicle.get_world(), [self.target_waypoint], self._vehicle.get_location().z + 1.0)
@@ -246,15 +250,37 @@ class LocalPlanner(object):
     # ----- appended from original code ----------------------------------
     # ====================================================================
     def get_high_level_command(self):
-        if self._waypoint_buffer:
-            return self._waypoint_buffer[0][1]
-        return RoadOption.VOID
+        if self.high_level_command:
+            return self.high_level_command[1]
+        return RoadOption.LANEFOLLOW
 
     def is_waypoint_queue_empty(self):
         if len(self._waypoints_queue) == 0:
             return True
         else:
             return False
+
+    def buffer_waypoints(self):
+        #   Buffering the waypoints
+        if not self._waypoint_buffer:
+            for i in range(self._buffer_size):
+                if self._waypoints_queue:
+                    self._waypoint_buffer.append(
+                        self._waypoints_queue.popleft())
+                else:
+                    break
+
+        # purge the queue of obsolete waypoints
+        vehicle_transform = self._vehicle.get_transform()
+        max_index = -1
+
+        for i, (waypoint, _) in enumerate(self._waypoint_buffer):
+            if distance_vehicle(
+                    waypoint, vehicle_transform) < self._min_distance:
+                max_index = i
+        if max_index >= 0:
+            for i in range(max_index + 1):
+                self.high_level_command = self._waypoint_buffer.popleft()
 
 
 def _retrieve_options(list_waypoints, current_waypoint):
