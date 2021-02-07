@@ -10,9 +10,11 @@ data order is same as above page, but the values may differ or not be collected.
 
 imit_agent : running trained model in 0.9.X (in devlopment)
 
-maual_data_collector.py, game.py is based on [manual_control.py](https://github.com/carla-simulator/carla/blob/master/PythonAPI/examples/manual_control.py) and
+~~maual_data_collector.py, game.py is based on [manual_control.py](https://github.com/carla-simulator/carla/blob/master/PythonAPI/examples/manual_control.py) and~~
 
-automatic_data_controller.py is based on [automatic_control.py](https://github.com/carla-simulator/carla/blob/master/PythonAPI/examples/automatic_control.py)
+~~automatic_data_controller.py is based on [automatic_control.py](https://github.com/carla-simulator/carla/blob/master/PythonAPI/examples/automatic_control.py)~~
+
+now merged : data_collector.py, please see args to collect data manually or automatically.
 
 you have to create folder "output" in collector/
 
