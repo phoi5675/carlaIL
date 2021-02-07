@@ -53,7 +53,7 @@ class Recorder(object):
     orientation_z = 0.0
 
     high_level_com = 0
-    noise = False  # not used
+    noise = False
     camera = 0  # not used
     angle = 0  # not used
 
@@ -96,6 +96,10 @@ class Recorder(object):
         Recorder.brake = c.brake
         Recorder.hand_brake = c.hand_brake
         Recorder.reverse_gear = c.reverse
+
+        Recorder.steer_noise = 0.0 if Recorder.noise is False else Recorder.steer_noise
+        Recorder.gas_noise = 0.0 if Recorder.noise is False else Recorder.gas_noise
+        Recorder.brake_noise = 0.0 if Recorder.noise is False else Recorder.brake_noise
 
         Recorder.x_pos = t.location.x
         Recorder.y_pos = t.location.y
