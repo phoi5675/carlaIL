@@ -182,7 +182,7 @@ def load_imitation_learning_network(input_image, input_data, input_size, dropout
     j = network_manager.fc_block(j, 512)
 
     """Start BRANCHING"""
-    branch_config = [["Steer", "Gas", "Brake"], ["Steer", "Gas", "Brake"], \
+    branch_config = [["Steer", "Gas", "Brake"], ["Steer", "Gas", "Brake"],
                      ["Steer", "Gas", "Brake"], ["Steer", "Gas", "Brake"], ["Speed"]]
 
     # Action a

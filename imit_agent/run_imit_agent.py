@@ -12,12 +12,9 @@
 
 from __future__ import print_function
 
-import argparse
+import imit_agent
 import glob
-import logging
 import os
-import random
-import re
 import sys
 
 try:
@@ -51,16 +48,11 @@ try:
 except IndexError:
     pass
 
-import carla
-from carla import ColorConverter as cc
-from agents.navigation.basic_agent import BasicAgent
-from imit_agent import ImitAgent
-
 # ==============================================================================
 # -- import controller ---------------------------------------------------------
 # ==============================================================================
 
-from game_controller import *
+from game_imitation import *
 
 
 # ==============================================================================
@@ -102,29 +94,31 @@ def game_loop(args):
         settings.fixed_delta_seconds = 0.05
 
         # set synchronous mode
-        server_world.apply_settings(settings)
+        # server_world.apply_settings(settings)
 
         hud = HUD(args.width, args.height)
         world = World(server_world, hud, args)
         controller = KeyboardControl(world, False)
 
-        # agent = BasicAgent(world.player, target_speed=25)
         agent = ImitAgent(world.player, args.avoid_stopping)
         spawn_point = world.map.get_spawn_points()[0]
         agent.set_destination((spawn_point.location.x,
                                spawn_point.location.y,
                                spawn_point.location.z))
 
+        world.agent = agent
+
         clock = pygame.time.Clock()
         while True:
             # tick_busy_loop(FPS) : 수직동기화랑 비슷한 tick() 함수
-            clock.tick_busy_loop(30)
+            clock.tick_busy_loop(60)
 
-            # game_controller.parse_events(client, world, clock)
             if controller.parse_events(client, world, clock):
                 return
 
             world.tick(clock)
+            # server_world.tick()  # 서버 시간 tick
+
             world.render(display)
             pygame.display.flip()
 

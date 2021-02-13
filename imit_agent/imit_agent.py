@@ -13,7 +13,19 @@ The agent also responds to traffic lights. """
 import tensorflow as tf
 import numpy as np
 from PIL import Image
+import scipy
 import os
+import sys
+import math
+
+# ==============================================================================
+# -- add PythonAPI for release mode --------------------------------------------
+# ==============================================================================
+try:
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/carla')
+except IndexError:
+    pass
+
 import carla
 from carla import ColorConverter as cc
 
@@ -29,6 +41,7 @@ class ImitAgent(Agent):
     BasicAgent implements a basic agent that navigates scenes to reach a given
     target destination. This agent respects traffic lights and other vehicles.
     """
+    front_image = None
 
     def __init__(self, vehicle, avoid_stopping, target_speed=20, memory_fraction=0.25, image_cut=[115, 510]):
         """
@@ -47,14 +60,13 @@ class ImitAgent(Agent):
         self._local_planner = LocalPlanner(
             self._vehicle, opt_dict={'target_speed': target_speed,
                                      'lateral_control_dict': args_lateral_dict})
-        self._hop_resolution = 2.0
-        self._path_seperation_hop = 2
+        self._hop_resolution = 1.5
+        self._path_seperation_hop = 3
         self._path_seperation_threshold = 0.5
         self._target_speed = target_speed
         self._grp = None
 
         # data from vehicle
-        self.front_image = None
         self.vehicle_speed = 0
 
         # load tf network model
@@ -73,7 +85,7 @@ class ImitAgent(Agent):
 
         self._sess = tf.Session(config=config_gpu)  # 작업을 위한 session 선언
 
-        with tf.device('/cpu:0'):  # 수동으로 device 배치 / default : '/gpu:0'
+        with tf.device('/gpu:0'):  # 수동으로 device 배치 / default : '/gpu:0'
             # tf.placeholder(dtype, shape, name) 형태로 shape에 데이터를 parameter로 전달
             self._input_images = tf.placeholder("float", shape=[None, self._image_size[0],
                                                                 self._image_size[1],
@@ -179,9 +191,10 @@ class ImitAgent(Agent):
         self._local_planner.buffer_waypoints()
 
         direction = self.get_high_level_command()
-        speed = self._vehicle.get_velocity()
+        v = self._vehicle.get_velocity()
+        speed = math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)  # use m/s
 
-        control = self._compute_action(self.front_image, speed, direction)
+        control = self._compute_action(ImitAgent.front_image, speed, direction)
         return control
 
     def _compute_action(self, rgb_image, speed, direction=None):
@@ -189,8 +202,8 @@ class ImitAgent(Agent):
         Calculate steer, gas, brake from image input
         :return: carla.VehicleControl
         """
-
         '''
+        # TODO scipy 제대로 되는지 확인
         # scipy 에서 imresize 가 depreciated 됐으므로 다른 방법으로 이미지 리사이즈
         # 이미지를 비율에 어느 정도 맞게 크롭 (395 * 800)
         rgb_image = rgb_image[self._image_cut[0]:self._image_cut[1], :]
@@ -205,13 +218,13 @@ class ImitAgent(Agent):
         array = np.frombuffer(rgb_image.raw_data, dtype=np.dtype("uint8"))
         array = np.reshape(array, (rgb_image.height, rgb_image.width, 4))
         array = array[self._image_cut[0]:self._image_cut[1], :, :3]  # 필요 없는 부분을 잘라내고
-        array = array[:, :, ::-1]  # 채널 색상 순서 변경? 안 하면 색 이상하게 출력
+        # array = array[:, :, ::-1]  # 채널 색상 순서 변경? 안 하면 색 이상하게 출력
 
         image_pil = Image.fromarray(array.astype('uint8'), 'RGB')
         image_pil = image_pil.resize((self._image_size[1], self._image_size[0]))  # 원하는 크기로 리사이즈
-        np_image = np.array(image_pil, dtype=np.dtype("uint8"))
+        image_input = np.array(image_pil, dtype=np.dtype("uint8"))
 
-        image_input = np_image.astype(np.float32)
+        image_input = image_input.astype(np.float32)
         image_input = np.multiply(image_input, 1.0 / 255.0)
 
         steer, acc, brake = self._control_function(image_input, speed, direction, self._sess)
@@ -229,9 +242,9 @@ class ImitAgent(Agent):
 
         # Control() 대신 VehicleControl() 으로 변경됨 (0.9.X 이상)
         control = carla.VehicleControl()
-        control.steer = steer
-        control.throttle = acc
-        control.brake = brake
+        control.steer = float(steer)
+        control.throttle = float(acc)
+        control.brake = float(brake)
 
         control.hand_brake = 0
         control.reverse = 0
@@ -249,7 +262,7 @@ class ImitAgent(Agent):
             (1, self._image_size[0], self._image_size[1], self._image_size[2]))
 
         # Normalize with the maximum speed from the training set ( 90 km/h)
-        speed = np.array(speed / 25.0)
+        speed = np.array(speed / 1.0)
 
         speed = speed.reshape((1, 1))
 
@@ -262,14 +275,24 @@ class ImitAgent(Agent):
         TURN_LEFT = 3.0
         LANE_FOLLOW = 2.0
         '''
+        '''
         if control_input == 2 or control_input == 0.0:
             all_net = branches[0]   # continue
         elif control_input == 3:
             all_net = branches[2]   # left
         elif control_input == 4:
             all_net = branches[3]   # right
-        else:
+        elif control_input == 5:
             all_net = branches[1]   # straight?
+        '''
+        if control_input == 2 or control_input == 0.0:
+            all_net = branches[0]  # continue
+        elif control_input == 3:
+            all_net = branches[1]  # left
+        elif control_input == 4:
+            all_net = branches[2]  # right
+        elif control_input == 5:
+            all_net = branches[3]  # straight?
 
         feedDict = {x: image_input, input_speed: speed, dout: [1] * len(self.dropout_vec)}
 
