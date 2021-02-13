@@ -82,6 +82,7 @@ class LocalPlanner(object):
         self._init_controller(opt_dict)
 
         self.high_level_command = None
+        self.prev_hcl = None
 
     def __del__(self):
         if self._vehicle:
@@ -123,7 +124,7 @@ class LocalPlanner(object):
                 self._target_speed = opt_dict['target_speed']
             if 'sampling_radius' in opt_dict:
                 self._sampling_radius = self._target_speed * \
-                    opt_dict['sampling_radius'] / 3.6
+                                        opt_dict['sampling_radius'] / 3.6
             if 'lateral_control_dict' in opt_dict:
                 args_lateral_dict = opt_dict['lateral_control_dict']
             if 'longitudinal_control_dict' in opt_dict:
@@ -131,8 +132,8 @@ class LocalPlanner(object):
 
         self._current_waypoint = self._map.get_waypoint(self._vehicle.get_location())
         self._vehicle_controller = VehiclePIDController(self._vehicle,
-                                                       args_lateral=args_lateral_dict,
-                                                       args_longitudinal=args_longitudinal_dict)
+                                                        args_lateral=args_lateral_dict,
+                                                        args_longitudinal=args_longitudinal_dict)
 
         self._global_plan = False
 
@@ -241,6 +242,13 @@ class LocalPlanner(object):
             for i in range(max_index + 1):
                 self.high_level_command = self._waypoint_buffer.popleft()
 
+                if self.high_level_command[1] is not RoadOption.LANEFOLLOW:
+                    self.prev_hcl = self.high_level_command
+
+                if self.prev_hcl is not None and self.high_level_command[1] is RoadOption.LANEFOLLOW:
+                    self.high_level_command = self.prev_hcl
+                    self.prev_hcl = None
+
         if debug:
             draw_waypoints(self._vehicle.get_world(), [self.target_waypoint], self._vehicle.get_location().z + 1.0)
 
@@ -281,6 +289,13 @@ class LocalPlanner(object):
         if max_index >= 0:
             for i in range(max_index + 1):
                 self.high_level_command = self._waypoint_buffer.popleft()
+
+                if self.high_level_command[1] is not RoadOption.LANEFOLLOW:
+                    self.prev_hcl = self.high_level_command
+
+                if self.prev_hcl is not None and self.high_level_command[1] is RoadOption.LANEFOLLOW:
+                    self.high_level_command = self.prev_hcl
+                    self.prev_hcl = None
 
 
 def _retrieve_options(list_waypoints, current_waypoint):
