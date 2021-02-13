@@ -2,6 +2,7 @@ import math
 import numpy as np
 import h5py
 import os
+import threading
 
 
 class Recorder(object):
@@ -140,6 +141,12 @@ class Recorder(object):
             _save_h5_file()
             _clear_save_ary()
 
+        timer = threading.Timer(0.1, Recorder.record, [world, path, agent])
+
+        if world.recording_enabled:
+            timer.start()
+        else:
+            timer.cancel()
         '''
         for _list in DATA_ARY:
             print(_list, end=' ')

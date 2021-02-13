@@ -109,6 +109,7 @@ import weakref
 import scipy
 from PIL import Image
 from Recorder import Recorder
+import threading
 
 try:
     import pygame
@@ -172,11 +173,11 @@ def get_actor_display_name(actor, truncate=250):
 
 def noisy_agent(_control):
     p = random.random()
-    if p < 0.5:
+    if p < 0.2:
         return _control
 
     steer_noise = random.random() * 2 - 1  # steer val = -1 ~ 1
-    steer_noise = steer_noise * 0.3  # reduced to half
+    steer_noise = steer_noise * 0.6  # reduced to half
     throttle_noise = random.choice([0.5, 1.0])
     brake_noise = 0.0
 
@@ -649,6 +650,11 @@ class HUD(object):
         max_col = max(1.0, max(collision))
         collision = [x / max_col for x in collision]
         vehicles = world.world.get_actors().filter('vehicle.*')
+
+        if world.agent is not None:
+            hcl = world.agent.get_high_level_command()
+        else:
+            hcl = -1
         self._info_text = [
             'Server:  % 16.0f FPS' % self.server_fps,
             'Client:  % 16.0f FPS' % clock.get_fps(),
@@ -662,6 +668,7 @@ class HUD(object):
             'Location:% 20s' % ('(% 5.1f, % 5.1f)' % (t.location.x, t.location.y)),
             'GNSS:% 24s' % ('(% 2.6f, % 3.6f)' % (world.gnss_sensor.lat, world.gnss_sensor.lon)),
             'Height:  % 18.0f m' % t.location.z,
+            'HCL:  %22.0f' % hcl,
             '']
         if isinstance(c, carla.VehicleControl):
             self._info_text += [
@@ -878,12 +885,12 @@ class LaneInvasionSensor(object):
         lane_types = set(x.type for x in event.crossed_lane_markings)
         text = ['%r' % str(x).split()[-1] for x in lane_types]
         self.hud.notification('Crossed line %s' % ' and '.join(text))
-
+        '''
         if 'NONE' in text[0]:
             Recorder.sidewalk_intersect = 0.1
         elif 'Broken' in text[0]:
             Recorder.opposite_line_enter = 0.1
-
+        '''
 
 # ==============================================================================
 # -- GnssSensor --------------------------------------------------------

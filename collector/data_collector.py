@@ -5,6 +5,7 @@ from game_collector import *
 from Recorder import *
 import argparse
 import pygame
+import threading
 
 # ==============================================================================
 # -- find carla module ---------------------------------------------------------
@@ -42,7 +43,8 @@ def game_loop(args):
     pygame.init()
     pygame.font.init()
     world = None
-    tick_double_time = False  # delta_seconds 의 두 배 시간으로 녹화하게 만듦
+    tick = True
+    agent = None
     try:
         # 서버 연결
         client = carla.Client(args.host, args.port)
@@ -59,9 +61,9 @@ def game_loop(args):
         server_world = client.get_world()
         settings = server_world.get_settings()
         # settings.synchronous_mode = True
-        settings.fixed_delta_seconds = 0.05
+        # settings.fixed_delta_seconds = 0.05
 
-        server_world.apply_settings(settings)
+        # server_world.apply_settings(settings)
 
         world = World(server_world, hud, args)
 
@@ -88,11 +90,11 @@ def game_loop(args):
             # server_world.tick()  # 서버 시간 tick
 
             # 화면 제외 다른 데이터 녹화
-            if world.recording_enabled and tick_double_time:
-                Recorder.record(world, path=args.path)
-                tick_double_time = False
-            elif tick_double_time is False:  # 스위치 기능을 이용해 time_step 을 0.05초의 두 배로 설정
-                tick_double_time = True
+            if world.recording_enabled and tick:
+                Recorder.record(world, path=args.path, agent=agent)
+                tick = False
+            elif world.recording_enabled is not True:
+                tick = True
 
             if args.collector_method == "manual":
                 vehicle_controller.parse_events(client, world, clock)
