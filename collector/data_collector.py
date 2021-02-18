@@ -83,7 +83,7 @@ def game_loop(args):
         clock = pygame.time.Clock()
         while True:
             # tick_busy_loop(FPS) : 수직동기화랑 비슷한 tick() 함수
-            clock.tick_busy_loop(30)
+            clock.tick_busy_loop(60)
             if controller.parse_events(client, world, clock):
                 return
             world.tick(clock)
@@ -187,8 +187,8 @@ def main():
         '--collector_method',
         type=str,
         choices=["automatic", "manual"],
-        default='manual',
-        help='how to control vehicle (default: manual)')
+        default='automatic',
+        help='how to control vehicle (default: automatic)')
     args = argparser.parse_args()
 
     args.width, args.height = [int(x) for x in args.res.split('x')]

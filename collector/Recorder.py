@@ -8,22 +8,20 @@ import threading
 class Recorder(object):
     # High-level commands
     VOID = -1
-    '''
+
     LEFT = 1
     RIGHT = 2
     STRAIGHT = 3
     CHANGELEFT = 4
     CHANGERIGHT = 5
     LANEFOLLOW = 6
-    TRLIGHT_STOP = 7  # 이거 제외하고 나머지는 원래 있던 변수
     '''
-
     REACH_GOAL = 0.0
     GO_STRAIGHT = 5.0
     TURN_RIGHT = 4.0
     TURN_LEFT = 3.0
     LANE_FOLLOW = 2.0
-
+    '''
     # 순서는 carla IL 의 datasheet 순서를 따름
     image = None
 

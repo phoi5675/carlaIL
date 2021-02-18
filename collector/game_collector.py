@@ -178,7 +178,9 @@ def noisy_agent(_control):
 
     steer_noise = random.random() * 2 - 1  # steer val = -1 ~ 1
     steer_noise = steer_noise * 0.6  # reduced to half
-    throttle_noise = random.choice([0.5, 1.0])
+    throttle_noise = _control.throttle
+    if 0.2 < p < 0.6:
+        throttle_noise = random.choice([0.5, 1.0])
     brake_noise = 0.0
 
     steer_sum = _control.steer + steer_noise
@@ -325,7 +327,8 @@ class VehicleController(object):
             raise NotImplementedError("Actor type not supported")
 
         pygame.joystick.init()
-        self.joystick = pygame.joystick.Joystick(0)
+        if not is_keyboard:
+            self.joystick = pygame.joystick.Joystick(0)
         world.hud.notification("Press 'H' or '?' for help.", seconds=4.0)
 
     def parse_events(self, client, world, clock):
@@ -406,7 +409,8 @@ class VehicleController(object):
             world.player.apply_control(self._control)
 
         # high level command for Recorder
-        # TODO Recorder.VOID 값 버튼에 맞게 변경하기
+        # TODO 버튼의 high level command 값을 버전에 맞게 변경하기
+        '''
         if btn_a:
             Recorder.high_level_com = Recorder.GO_STRAIGHT
         elif btn_b:
@@ -416,28 +420,25 @@ class VehicleController(object):
         else:
             # default high level command value : lane_follow
             Recorder.high_level_com = Recorder.LANE_FOLLOW
-
+        '''
         # set autopilot
         if btn_xbox:
             self._autopilot_enabled = not self._autopilot_enabled
             world.player.set_autopilot(self._autopilot_enabled)
             world.hud.notification('Autopilot %s' % ('On' if self._autopilot_enabled else 'Off'))
-        '''
+
         if btn_a:
-            Recorder.high_level_com = Recorder.VOID
+            Recorder.high_level_com = Recorder.STRAIGHT
         elif btn_b:
-            Recorder.high_level_com = Recorder.VOID
+            Recorder.high_level_com = Recorder.LEFT
         elif btn_x:
-            Recorder.high_level_com = Recorder.VOID
-        elif btn_y:
-            Recorder.high_level_com = Recorder.VOID
+            Recorder.high_level_com = Recorder.RIGHT
         elif btn_lb:
-            Recorder.high_level_com = Recorder.VOID
+            Recorder.high_level_com = Recorder.CHANGELEFT
         elif btn_rb:
-            Recorder.high_level_com = Recorder.VOID
+            Recorder.high_level_com = Recorder.CHANGERIGHT
         elif btn_start:
-            Recorder.high_level_com = Recorder.VOID
-        '''
+            Recorder.high_level_com = Recorder.LANEFOLLOW
 
     def keyboard_controller(self, client, world, clock):
         for event in pygame.event.get():
@@ -668,7 +669,7 @@ class HUD(object):
             'Location:% 20s' % ('(% 5.1f, % 5.1f)' % (t.location.x, t.location.y)),
             'GNSS:% 24s' % ('(% 2.6f, % 3.6f)' % (world.gnss_sensor.lat, world.gnss_sensor.lon)),
             'Height:  % 18.0f m' % t.location.z,
-            'HCL:  %22.0f' % hcl,
+            'HCL:  %23s' % hcl,
             '']
         if isinstance(c, carla.VehicleControl):
             self._info_text += [
@@ -937,7 +938,7 @@ class CameraManager(object):
         Attachment = carla.AttachmentType
         self._camera_transforms = [
             (carla.Transform(carla.Location(x=-5.5, z=2.5), carla.Rotation(pitch=8.0)), Attachment.SpringArm),
-            (carla.Transform(carla.Location(x=2.0, z=1.4)), Attachment.Rigid),
+            (carla.Transform(carla.Location(x=2.0, z=1.4), carla.Rotation(pitch=-15.0)), Attachment.Rigid),
             (carla.Transform(carla.Location(x=5.5, y=1.5, z=1.5)), Attachment.SpringArm),
             (carla.Transform(carla.Location(x=-8.0, z=6.0), carla.Rotation(pitch=6.0)), Attachment.SpringArm),
             (carla.Transform(carla.Location(x=-1, y=-bound_y, z=0.5)), Attachment.Rigid)]
@@ -1041,7 +1042,7 @@ class FrontCamera(object):
         self._parent = parent_actor
         Attachment = carla.AttachmentType
         # TODO 카메라 각도 설정
-        self.camera_transform = (carla.Transform(carla.Location(x=2.0, z=1.4), carla.Rotation(pitch=-12.0)),
+        self.camera_transform = (carla.Transform(carla.Location(x=2.0, z=1.4), carla.Rotation(pitch=-15.0)),
                                  Attachment.Rigid)
 
         world = self._parent.get_world()
