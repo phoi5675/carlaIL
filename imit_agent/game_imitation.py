@@ -723,7 +723,7 @@ class CameraManager(object):
         Attachment = carla.AttachmentType
         self._camera_transforms = [
             (carla.Transform(carla.Location(x=-5.5, z=2.5), carla.Rotation(pitch=8.0)), Attachment.SpringArm),
-            (carla.Transform(carla.Location(x=2.0, z=1.4)), Attachment.Rigid),
+            (carla.Transform(carla.Location(x=2.0, z=1.4), carla.Rotation(pitch=-15.0)), Attachment.Rigid),
             (carla.Transform(carla.Location(x=5.5, y=1.5, z=1.5)), Attachment.SpringArm),
             (carla.Transform(carla.Location(x=-8.0, z=6.0), carla.Rotation(pitch=6.0)), Attachment.SpringArm),
             (carla.Transform(carla.Location(x=-1, y=-bound_y, z=0.5)), Attachment.Rigid)]
@@ -746,6 +746,7 @@ class CameraManager(object):
                 bp.set_attribute('image_size_y', str(hud.dim[1]))
                 if bp.has_attribute('gamma'):
                     bp.set_attribute('gamma', str(gamma_correction))
+                bp.set_attribute('fov', str(100))
             elif item[0].startswith('sensor.lidar'):
                 bp.set_attribute('range', '5000')
             item.append(bp)
@@ -827,7 +828,7 @@ class FrontCamera(object):
         self._parent = parent_actor
         Attachment = carla.AttachmentType
         # TODO 카메라 각도 설정
-        self.camera_transform = (carla.Transform(carla.Location(x=2.0, z=1.4), carla.Rotation(pitch=-12.0)),
+        self.camera_transform = (carla.Transform(carla.Location(x=2.0, z=1.4), carla.Rotation(pitch=-15.0)),
                                  Attachment.Rigid)
 
         world = self._parent.get_world()

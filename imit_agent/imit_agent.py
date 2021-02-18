@@ -160,6 +160,8 @@ class ImitAgent(Agent):
 
         self._local_planner.set_global_plan(route_trace)
 
+        self._local_planner.change_intersection_hcl()
+
     def _trace_route(self, start_waypoint, end_waypoint):
         """
         This method sets up a global router and returns the optimal route

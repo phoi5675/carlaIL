@@ -123,6 +123,7 @@ def game_loop(args):
             pygame.display.flip()
 
             control = agent.run_step()
+
             control.manual_gear_shift = False
             world.player.apply_control(control)
 
