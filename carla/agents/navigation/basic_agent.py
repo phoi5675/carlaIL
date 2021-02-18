@@ -61,6 +61,8 @@ class BasicAgent(Agent):
 
         self._local_planner.set_global_plan(route_trace)
 
+        self._local_planner.change_intersection_hcl()
+
     def _trace_route(self, start_waypoint, end_waypoint):
         """
         This method sets up a global router and returns the optimal route
@@ -149,6 +151,7 @@ class BasicAgent(Agent):
             else:
                 return REACH_GOAL
 
+        # return self._local_planner.get_high_level_command()
         hcl = self._local_planner.get_high_level_command()
         return hcl_converter(hcl)
 

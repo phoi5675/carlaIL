@@ -199,11 +199,11 @@ class LocalPlanner(object):
         :param debug: boolean flag to activate waypoints debugging
         :return:
         """
-
+        '''
         # not enough waypoints in the horizon? => add more!
         if not self._global_plan and len(self._waypoints_queue) < int(self._waypoints_queue.maxlen * 0.5):
             self._compute_next_waypoints(k=100)
-
+        '''
         if len(self._waypoints_queue) == 0:
             control = carla.VehicleControl()
             control.steer = 0.0
@@ -241,13 +241,6 @@ class LocalPlanner(object):
         if max_index >= 0:
             for i in range(max_index + 1):
                 self.high_level_command = self._waypoint_buffer.popleft()
-
-                if self.high_level_command[1] is not RoadOption.LANEFOLLOW:
-                    self.prev_hcl = self.high_level_command
-
-                if self.prev_hcl is not None and self.high_level_command[1] is RoadOption.LANEFOLLOW:
-                    self.high_level_command = self.prev_hcl
-                    self.prev_hcl = None
 
         if debug:
             draw_waypoints(self._vehicle.get_world(), [self.target_waypoint], self._vehicle.get_location().z + 1.0)
@@ -290,12 +283,43 @@ class LocalPlanner(object):
             for i in range(max_index + 1):
                 self.high_level_command = self._waypoint_buffer.popleft()
 
-                if self.high_level_command[1] is not RoadOption.LANEFOLLOW:
-                    self.prev_hcl = self.high_level_command
+    def change_intersection_hcl(self, enter_hcl_len=10, exit_hcl_len=6):
+        # Change high-level commands at the intersections
+        if not self._waypoints_queue:
+            return
 
-                if self.prev_hcl is not None and self.high_level_command[1] is RoadOption.LANEFOLLOW:
-                    self.high_level_command = self.prev_hcl
-                    self.prev_hcl = None
+        # because waypoint_queue is deque(tuple()), waypoint_queue needs to be converted
+        # into list and then tuple
+        _waypoint_list = []
+        for queue in enumerate(self._waypoints_queue):
+            _waypoint_list.append(list(list(queue)[1]))
+
+        for i, queue in enumerate(_waypoint_list):
+            # when not following lane : turn left, right, ...
+            if queue[1] is not RoadOption.LANEFOLLOW and \
+                    queue[1] is not RoadOption.VOID:
+                continue
+            elif i + enter_hcl_len < len(_waypoint_list):
+                # entering intersections
+                if _waypoint_list[i + enter_hcl_len][1] is not RoadOption.LANEFOLLOW and \
+                        _waypoint_list[i + enter_hcl_len][1] is not RoadOption.VOID:
+                    for j in range(0, enter_hcl_len):
+                        _waypoint_list[i + j][1] = _waypoint_list[i + enter_hcl_len][1]
+
+        for i, queue in reversed(list(enumerate(_waypoint_list))):
+            if queue[1] is not RoadOption.LANEFOLLOW and \
+                    queue[1] is not RoadOption.VOID:
+                continue
+            if i - exit_hcl_len >= 0:
+                # exiting intersections
+                if _waypoint_list[i - exit_hcl_len][1] is not RoadOption.LANEFOLLOW and \
+                        _waypoint_list[i - exit_hcl_len][1] is not RoadOption.VOID:
+                    for j in range(0, exit_hcl_len):
+                        _waypoint_list[i - j][1] = _waypoint_list[i - exit_hcl_len][1]
+
+        self._waypoints_queue = deque()
+        for queue in enumerate(_waypoint_list):
+            self._waypoints_queue.append(tuple(queue[1]))
 
 
 def _retrieve_options(list_waypoints, current_waypoint):
