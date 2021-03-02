@@ -462,7 +462,7 @@ class HUD(object):
             'Location:% 20s' % ('(% 5.1f, % 5.1f)' % (t.location.x, t.location.y)),
             'GNSS:% 24s' % ('(% 2.6f, % 3.6f)' % (world.gnss_sensor.lat, world.gnss_sensor.lon)),
             'Height:  % 18.0f m' % t.location.z,
-            'HCL:  %22.0f' % world.agent.get_high_level_command(),
+            'HCL:  %22s' % world.agent.get_high_level_command(convert=False),
             '']
         if isinstance(c, carla.VehicleControl):
             self._info_text += [
@@ -827,13 +827,13 @@ class FrontCamera(object):
         self._parent = parent_actor
         Attachment = carla.AttachmentType
         # TODO 카메라 각도 설정
-        self.camera_transform = (carla.Transform(carla.Location(x=2.0, z=1.4), carla.Rotation(pitch=-12.0)),
+        self.camera_transform = (carla.Transform(carla.Location(x=2.0, z=1.4), carla.Rotation(pitch=-15.0)),
                                  Attachment.Rigid)
 
         world = self._parent.get_world()
         self.blueprint = world.get_blueprint_library().find('sensor.camera.rgb')
         self.blueprint.set_attribute('role_name', 'front_camera')  # role_name 설정
-        # self.blueprint.set_attribute('sensor_tick', str(0.1))
+        self.blueprint.set_attribute('sensor_tick', str(0.05))
         self.blueprint.set_attribute('image_size_x', str(800))
         self.blueprint.set_attribute('image_size_y', str(600))
         self.blueprint.set_attribute('fov', str(100))

@@ -70,7 +70,7 @@ class ImitAgent(Agent):
         self.vehicle_speed = 0
 
         # load tf network model
-        self.dropout_vec = [1.0] * 8 + [0.7] * 2 + [0.5] * 2 + [0.5] * 1 + [0.5, 1.] * 5
+        self.dropout_vec = [1.0] * 8 + [0.7] * 2 + [0.5] * 2 + [0.5] * 1 + [0.5, 1.] * 7
 
         config_gpu = tf.ConfigProto()  # tf 설정 프로토콜인듯?
 
@@ -96,7 +96,7 @@ class ImitAgent(Agent):
 
             # input control 종류가 4가지니까 [None, 4]로 지정?
             self._input_data.append(tf.placeholder(tf.float32,
-                                                   shape=[None, 4], name="input_control"))
+                                                   shape=[None, 6], name="input_control"))
 
             self._input_data.append(tf.placeholder(tf.float32,
                                                    shape=[None, 1], name="input_speed"))
@@ -192,7 +192,7 @@ class ImitAgent(Agent):
         # standard local planner behavior
         self._local_planner.buffer_waypoints()
 
-        direction = self.get_high_level_command()
+        direction = self.get_high_level_command(convert=False)
         v = self._vehicle.get_velocity()
         speed = math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)  # use m/s
 
@@ -268,39 +268,20 @@ class ImitAgent(Agent):
 
         speed = speed.reshape((1, 1))
 
-        # index 의 의미를 알아야 네트워크 분석이 가능할듯..!
-        '''
-        control_input (directions) 
-        REACH_GOAL = 0.0
-        GO_STRAIGHT = 5.0
-        TURN_RIGHT = 4.0
-        TURN_LEFT = 3.0
-        LANE_FOLLOW = 2.0
-        
-        '''
-        '''
-        if control_input == 2 or control_input == 0.0:
-            all_net = branches[0]   # continue
-        elif control_input == 3:
-            all_net = branches[2]   # left
-        elif control_input == 4:
-            all_net = branches[3]   # right
-        elif control_input == 5:
-            all_net = branches[1]   # straight?
-        '''
-        
-        if control_input == RoadOption.LANEFOLLOW:
-            all_net = branches[0]  # continue
-        elif control_input == RoadOption.LEFT:
-            all_net = branches[1]  # left
+        if control_input == RoadOption.LEFT:
+            all_net = branches[0]
         elif control_input == RoadOption.RIGHT:
-            all_net = branches[2]  # right
+            all_net = branches[1]
         elif control_input == RoadOption.STRAIGHT:
-            all_net = branches[3]  # straight
+            all_net = branches[2]
+        elif control_input == RoadOption.LANEFOLLOW:
+            all_net = branches[3]
         elif control_input == RoadOption.CHANGELANELEFT:
-            all_net = branches[4]  # change left
+            all_net = branches[5]
         elif control_input == RoadOption.CHANGELANERIGHT:
-            all_net = branches[5]  # change right
+            all_net = branches[4]
+        else:
+            all_net = branches[3]
 
         feedDict = {x: image_input, input_speed: speed, dout: [1] * len(self.dropout_vec)}
 
@@ -313,7 +294,7 @@ class ImitAgent(Agent):
         predicted_brake = (output_all[0][2])
 
         if self._avoid_stopping:
-            predicted_speed = sess.run(branches[4], feed_dict=feedDict)
+            predicted_speed = sess.run(branches[6], feed_dict=feedDict)
             predicted_speed = predicted_speed[0][0]
             real_speed = speed * 25.0
 
@@ -330,28 +311,29 @@ class ImitAgent(Agent):
 
         return predicted_steers, predicted_acc, predicted_brake
 
-    def get_high_level_command(self):
+    def get_high_level_command(self, convert=True):
         # convert new version of high level command to old version
         def hcl_converter(_hcl):
-            REACH_GOAL = 0.0
-            GO_STRAIGHT = 5.0
-            TURN_RIGHT = 4.0
-            TURN_LEFT = 3.0
-            LANE_FOLLOW = 2.0
-
-            if _hcl == RoadOption.STRAIGHT:
-                return GO_STRAIGHT
-            elif _hcl == RoadOption.LEFT:
-                return TURN_LEFT
+            from agents.navigation.local_planner import RoadOption
+            if _hcl == RoadOption.LEFT:
+                return 1
             elif _hcl == RoadOption.RIGHT:
-                return TURN_RIGHT
-            elif _hcl == RoadOption.LANEFOLLOW or _hcl == RoadOption.VOID:
-                return LANE_FOLLOW
-            else:
-                return REACH_GOAL
+                return 2
+            elif _hcl == RoadOption.STRAIGHT:
+                return 3
+            elif _hcl == RoadOption.LANEFOLLOW:
+                return 4
+            elif _hcl == RoadOption.CHANGELANELEFT:
+                return 5
+            elif _hcl == RoadOption.CHANGELANERIGHT:
+                return 6
 
+        # return self._local_planner.get_high_level_command()
         hcl = self._local_planner.get_high_level_command()
-        return hcl_converter(hcl)
+        if convert:
+            return hcl_converter(hcl)
+        else:
+            return self._local_planner.get_high_level_command()
 
     def is_reached_goal(self):
         return self._local_planner.is_waypoint_queue_empty()
