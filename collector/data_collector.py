@@ -105,7 +105,7 @@ def game_loop(args):
                 control.manual_gear_shift = False
 
                 if Recorder.noise:
-                    control = noisy_agent(control)
+                    control = noisy_agent(control, world.player, agent)
 
                 world.player.apply_control(control)
 

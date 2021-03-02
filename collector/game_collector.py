@@ -171,30 +171,36 @@ def get_actor_display_name(actor, truncate=250):
     return (name[:truncate - 1] + u'\u2026') if len(name) > truncate else name
 
 
-def noisy_agent(_control):
+def noisy_agent(_control, vehicle, agent=None):
     p = random.random()
+    v = vehicle.get_control()
+
     if p < 0.2:
         return _control
 
     steer_noise = random.random() * 2 - 1  # steer val = -1 ~ 1
-    steer_noise = steer_noise * 0.6  # reduced to half
-    throttle_noise = _control.throttle
-    if 0.2 < p < 0.6:
+
+    # steer_noise = steer_noise * 0.7  # reduced to half
+    if 0.2 <= p < 0.6:
         throttle_noise = random.choice([0.5, 1.0])
+    else:
+        throttle_noise = _control.throttle
+
     brake_noise = 0.0
 
     steer_sum = _control.steer + steer_noise
+
+    # don't apply noise for brake
+    _control.throttle = throttle_noise
+    _control.brake = _control.brake + brake_noise
+
     if steer_sum < -1.0:
         steer_sum = -1.0
     elif steer_sum > 1.0:
         steer_sum = 1.0
     else:
         steer_sum = steer_sum
-
-    # don't apply noise for brake
     _control.steer = steer_sum
-    _control.throttle = throttle_noise
-    _control.brake = _control.brake + brake_noise
 
     Recorder.steer_noise = _control.steer
     Recorder.gas_noise = _control.throttle
@@ -316,6 +322,7 @@ class VehicleController(object):
     def __init__(self, world, is_keyboard, start_in_autopilot):
         self._autopilot_enabled = start_in_autopilot
         self._is_keyboard = is_keyboard
+        self.vehicle = world.player
         if isinstance(world.player, carla.Vehicle):
             self._control = carla.VehicleControl()
             world.player.set_autopilot(self._autopilot_enabled)
@@ -338,7 +345,7 @@ class VehicleController(object):
             self.joystick_controller(client, world, clock)
 
     def noisy_agent(self):
-        self._control = noisy_agent(self._control)
+        self._control = noisy_agent(self._control, self.vehicle)
 
     def joystick_controller(self, client, world, clock):
         # AXIS_X : -1 : left, 1 : right
@@ -940,7 +947,7 @@ class CameraManager(object):
             (carla.Transform(carla.Location(x=-5.5, z=2.5), carla.Rotation(pitch=8.0)), Attachment.SpringArm),
             (carla.Transform(carla.Location(x=2.0, z=1.4), carla.Rotation(pitch=-15.0)), Attachment.Rigid),
             (carla.Transform(carla.Location(x=5.5, y=1.5, z=1.5)), Attachment.SpringArm),
-            (carla.Transform(carla.Location(x=-8.0, z=6.0), carla.Rotation(pitch=6.0)), Attachment.SpringArm),
+            (carla.Transform(carla.Location(z=35.0), carla.Rotation(pitch=-80.0)), Attachment.Rigid),
             (carla.Transform(carla.Location(x=-1, y=-bound_y, z=0.5)), Attachment.Rigid)]
         self.transform_index = 1
         self.sensors = [
