@@ -85,9 +85,11 @@ class LocalPlanner(object):
         self.prev_hcl = None
 
     def __del__(self):
+        """
         if self._vehicle:
             self._vehicle.destroy()
         print("Destroying ego-vehicle!")
+        """
 
     def reset_vehicle(self):
         self._vehicle = None
@@ -283,7 +285,7 @@ class LocalPlanner(object):
             for i in range(max_index + 1):
                 self.high_level_command = self._waypoint_buffer.popleft()
 
-    def change_intersection_hcl(self, enter_hcl_len=10, exit_hcl_len=6):
+    def change_intersection_hcl(self, enter_hcl_len=15, exit_hcl_len=18):
         # Change high-level commands at the intersections
         if not self._waypoints_queue:
             return
@@ -296,8 +298,8 @@ class LocalPlanner(object):
 
         for i, queue in enumerate(_waypoint_list):
             # when not following lane : turn left, right, ...
-            if queue[1] is not RoadOption.LANEFOLLOW and \
-                    queue[1] is not RoadOption.VOID:
+            if queue[1] is not RoadOption.LANEFOLLOW and queue[1] is not RoadOption.VOID and \
+                    queue[1] is not RoadOption.CHANGELANELEFT and queue[1] is not RoadOption.CHANGELANERIGHT:
                 continue
             elif i + enter_hcl_len < len(_waypoint_list):
                 # entering intersections
@@ -320,6 +322,17 @@ class LocalPlanner(object):
         self._waypoints_queue = deque()
         for queue in enumerate(_waypoint_list):
             self._waypoints_queue.append(tuple(queue[1]))
+
+    def is_dest_far_enough(self):
+        queue_len = len(self._waypoints_queue)
+        if queue_len < 30:
+            print("dest : " + queue_len)
+            return False
+        else:
+            return True
+
+    def set_target_speed(self, speed):
+        self._target_speed = speed
 
 
 def _retrieve_options(list_waypoints, current_waypoint):

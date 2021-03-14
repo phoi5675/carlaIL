@@ -10,12 +10,17 @@
 waypoints and avoiding other vehicles.
 The agent also responds to traffic lights. """
 
-
 import carla
 from agents.navigation.agent import Agent, AgentState
 from agents.navigation.local_planner import LocalPlanner
 from agents.navigation.global_route_planner import GlobalRoutePlanner
 from agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
+from agents.navigation.local_planner import RoadOption
+
+import math
+import random
+import time
+
 
 class BasicAgent(Agent):
     """
@@ -36,23 +41,40 @@ class BasicAgent(Agent):
             'K_P': 1,
             'K_D': 0.02,
             'K_I': 0,
-            'dt': 1.0/20.0}
+            'dt': 1.0 / 20.0}
         self._local_planner = LocalPlanner(
-            self._vehicle, opt_dict={'target_speed' : target_speed,
-            'lateral_control_dict':args_lateral_dict})
-        self._hop_resolution = 1.5
+            self._vehicle, opt_dict={'target_speed': target_speed,
+                                     'lateral_control_dict': args_lateral_dict})
+        self._hop_resolution = 0.2
         self._path_seperation_hop = 2
         self._path_seperation_threshold = 0.5
         self._target_speed = target_speed
         self._grp = None
 
-    def set_destination(self, location):
+        self._radar_data = None
+        self._obstacle_ahead = False
+        self._obstacle_far_ahead = False
+        self._speed = 0.0
+
+        self.noise_steer_path = 0
+        self.noise_steer = 0
+        self.noise_start_time = 0
+        self.noise_duration = 0
+
+        self.weird_steer_count = 0
+        self.weird_reset_count = 0
+
+    def set_destination(self, location, start_loc=None):
         """
         This method creates a list of waypoints from agent's position to destination location
         based on the route returned by the global router
         """
 
-        start_waypoint = self._map.get_waypoint(self._vehicle.get_location())
+        if start_loc is not None:
+            start_waypoint = self._map.get_waypoint(carla.Location(start_loc[0], start_loc[1], start_loc[2]))
+        else:
+            start_waypoint = self._map.get_waypoint(self._vehicle.get_location())
+
         end_waypoint = self._map.get_waypoint(
             carla.Location(location[0], location[1], location[2]))
 
@@ -62,6 +84,11 @@ class BasicAgent(Agent):
         self._local_planner.set_global_plan(route_trace)
 
         self._local_planner.change_intersection_hcl()
+
+        self.weird_steer_count = 0
+        self.weird_reset_count = 0
+
+        print("set new waypoint")
 
     def _trace_route(self, start_waypoint, end_waypoint):
         """
@@ -89,41 +116,38 @@ class BasicAgent(Agent):
         :return: carla.VehicleControl
         """
 
-        # is there an obstacle in front of us?
-        hazard_detected = False
+        v = self._vehicle.get_velocity()
+        c = self._vehicle.get_control()
 
-        # retrieve relevant elements for safe navigation, i.e.: traffic lights
-        # and other vehicles
-        actor_list = self._world.get_actors()
-        vehicle_list = actor_list.filter("*vehicle*")
-        lights_list = actor_list.filter("*traffic_light*")
+        speed = 3.6 * math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)
+        self._speed = speed
 
-        # check possible obstacles
-        vehicle_state, vehicle = self._is_vehicle_hazard(vehicle_list)
-        if vehicle_state:
-            if debug:
-                print('!!! VEHICLE BLOCKING AHEAD [{}])'.format(vehicle.id))
+        self.run_radar()
 
-            self._state = AgentState.BLOCKED_BY_VEHICLE
-            hazard_detected = True
+        # check maneuvering
+        if self.is_maneuvering_weird(c):
+            self.weird_steer_count += 1
 
-        # TODO 신호등 인식하는 부분 나중에 다시 살리기
-        # check for the state of the traffic lights
-        '''
-        light_state, traffic_light = self._is_light_red(lights_list)
-        if light_state:
-            if debug:
-                print('=== RED LIGHT AHEAD [{}])'.format(traffic_light.id))
+        if self.weird_steer_count >= 15:
+            print("vehicle is steering in wrong way")
+            self.weird_steer_count = 0
+            self.weird_reset_count += 1
 
-            self._state = AgentState.BLOCKED_RED_LIGHT
-            hazard_detected = True
-        '''
-        if hazard_detected:
-            control = self.emergency_stop()
-        else:
-            self._state = AgentState.NAVIGATING
-            # standard local planner behavior
-            control = self._local_planner.run_step(debug=debug)
+        if self.weird_reset_count >= 3:
+            self.reset_destination()
+            self.weird_reset_count = 0
+            self.weird_steer_count = 0
+
+        control = self._local_planner.run_step(debug=debug)
+
+        self._state = AgentState.NAVIGATING
+        # standard local planner behavior
+
+        if self._obstacle_ahead:
+            control.throttle = 0.0
+            control.brake = 1.0
+            control.hand_brake = False
+        # control.throttle = self._vehicle_throttle
 
         return control
 
@@ -133,7 +157,19 @@ class BasicAgent(Agent):
     def get_high_level_command(self):
         # convert new version of high level command to old version
         def hcl_converter(_hcl):
-            from agents.navigation.local_planner import RoadOption
+            if _hcl == RoadOption.LEFT:
+                return 1
+            elif _hcl == RoadOption.RIGHT:
+                return 2
+            elif _hcl == RoadOption.STRAIGHT:
+                return 3
+            elif _hcl == RoadOption.LANEFOLLOW:
+                return 4
+            elif _hcl == RoadOption.CHANGELANELEFT:
+                return 5
+            elif _hcl == RoadOption.CHANGELANERIGHT:
+                return 6
+            '''
             REACH_GOAL = 0.0
             GO_STRAIGHT = 5.0
             TURN_RIGHT = 4.0
@@ -150,10 +186,126 @@ class BasicAgent(Agent):
                 return LANE_FOLLOW
             else:
                 return REACH_GOAL
+            '''
 
         # return self._local_planner.get_high_level_command()
         hcl = self._local_planner.get_high_level_command()
         return hcl_converter(hcl)
 
+    def is_maneuvering_weird(self, control):
+        hcl = self._local_planner.get_high_level_command()
+        turn_threshold = 0.7
+        if hcl is RoadOption.STRAIGHT or hcl is RoadOption.LANEFOLLOW:
+            if abs(control.steer) >= turn_threshold:
+                return True
+        elif (hcl is RoadOption.LEFT or hcl is RoadOption.CHANGELANELEFT) and control.steer >= turn_threshold:
+            return True
+        elif (hcl is RoadOption.RIGHT or hcl is RoadOption.CHANGELANERIGHT) and control.steer <= -turn_threshold:
+            return True
+        elif (hcl is RoadOption.CHANGELANERIGHT or hcl is RoadOption.CHANGELANELEFT) \
+                and abs(control.steer) >= turn_threshold:
+            return True
+        else:
+            return False
+
     def is_reached_goal(self):
         return self._local_planner.is_waypoint_queue_empty()
+
+    def is_dest_far_enough(self):
+        return self._local_planner.is_dest_far_enough()
+
+    def set_radar_data(self, radar_data):
+        self._radar_data = radar_data
+
+    def set_stop_radar_range(self):
+        hcl = self._local_planner.get_high_level_command()
+        c = self._vehicle.get_control()
+        steer = abs(c.steer) * 20
+        # 교차로 주행 시
+        if hcl is RoadOption.RIGHT or hcl is RoadOption.LEFT or hcl is RoadOption.STRAIGHT:
+            yaw_angle = 40
+        else:  # 교차로 아닌 경우
+            yaw_angle = 15
+        return yaw_angle + steer
+
+    def set_target_speed(self, speed):
+        self._local_planner.set_target_speed(speed)
+
+    def is_obstacle_ahead(self, _rotation, _detect):
+        radar_range = self.set_stop_radar_range()
+
+        threshold = max(self._speed * 0.2, 3)
+        if -5.0 <= _rotation.pitch <= 5.0 and -radar_range <= _rotation.yaw <= radar_range and \
+                _detect.depth <= threshold:
+            return True
+        return False
+
+    def is_obstacle_far_ahead(self, _rotation, _detect):
+        radar_range = self.set_stop_radar_range()
+        c = self._vehicle.get_control()
+        steer = abs(c.steer) * 4
+        left_margin = steer if c.steer < 0 else 0
+        right_margin = steer if c.steer > 0 else 0
+        if 1.0 <= _rotation.pitch <= 5.0 and -(5 + left_margin) <= _rotation.yaw <= (5 + right_margin) \
+                and _detect.depth <= 15:
+            return True
+        return False
+
+    def run_radar(self):
+        if self._radar_data is None:
+            return False
+        current_rot = self._radar_data.transform.rotation
+        self._obstacle_ahead = False
+        self._obstacle_far_ahead = False
+
+        for detect in self._radar_data:
+            azi = math.degrees(detect.azimuth)
+            alt = math.degrees(detect.altitude)
+
+            rotation = carla.Rotation(
+                pitch=current_rot.pitch + alt,
+                yaw=azi,
+                roll=current_rot.roll)
+
+            if self.is_obstacle_ahead(rotation, detect):
+                self._obstacle_ahead = True
+            elif self.is_obstacle_far_ahead(rotation, detect):
+                self._obstacle_far_ahead = True
+
+        '''
+        if self._obstacle_far_ahead:
+            target_spd = 17
+        else:
+            target_spd = 28
+        
+        self._local_planner.set_target_speed(target_spd)
+        self._target_speed = target_spd
+        '''
+
+    def noisy_agent(self, control):
+        """
+
+        :return: steer_noise
+        """
+        noisy_time = time.time() - self.noise_start_time
+        if noisy_time >= self.noise_duration:
+            self.noise_steer = random.choice([random.uniform(0.2, 0.4), random.uniform(-0.4, -0.2)])
+            self.noise_start_time = time.time()
+            self.noise_duration = random.uniform(2, 5)
+        elif self.noise_duration * 0.5 < noisy_time <= self.noise_duration:
+            return 0  # 노이즈 기간의 남은 30% 동안은 노이즈 삽입 X
+
+        return self.noise_steer
+
+    def reset_destination(self):
+        sp = self._map.get_spawn_points()
+        rand_sp = random.choice(sp)
+        self._vehicle.set_transform(rand_sp)
+
+        control_reset = carla.VehicleControl()
+        control_reset.steer, control_reset.throttle, control_reset.brake = 0.0, 0.0, 0.0
+        self._vehicle.apply_control(control_reset)
+
+        spawn_point = random.choice(self._map.get_spawn_points())
+        self.set_destination((spawn_point.location.x, spawn_point.location.y, spawn_point.location.z),
+                             start_loc=(rand_sp.location.x, rand_sp.location.y, rand_sp.location.z))
