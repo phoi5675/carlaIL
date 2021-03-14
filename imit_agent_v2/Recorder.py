@@ -2,6 +2,7 @@ import math
 import numpy as np
 import h5py
 import os
+from PIL import Image
 
 
 class Recorder(object):
@@ -136,10 +137,6 @@ class Recorder(object):
             _save_h5_file()
             _clear_save_ary()
 
-        '''
-        for _list in DATA_ARY:
-            print(_list, end=' ')
-        print('\n')
         if Recorder.image is not None:  # 동기화 문제 때문에 image 가 None 상태 유지되는 경우 예방
-            Recorder.image.save('output/%.3f.png' % Recorder.platform_time)
-        '''
+            image = Image.fromarray(Recorder.image)
+            image.save('output/%.3f.png' % Recorder.platform_time)

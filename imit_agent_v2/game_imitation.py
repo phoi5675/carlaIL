@@ -108,6 +108,8 @@ import time
 from PIL import Image
 from Recorder import Recorder
 from imit_agent import ImitAgent
+import cv2
+
 
 try:
     import pygame
@@ -185,6 +187,7 @@ class World(object):
         self.camera_manager = None
         self.front_camera = None
         self.agent = None
+        self.radar_sensor = None
 
         self._weather_presets = find_weather_presets()
         self._weather_index = 0
@@ -237,6 +240,9 @@ class World(object):
         self.front_camera = FrontCamera(self.player)
         self.front_camera.set_sensor()
 
+        # 레이더 부착
+        self.radar_sensor = RadarSensor(self.player, self.agent)
+
         actor_type = get_actor_display_name(self.player)
         self.hud.notification(actor_type)
 
@@ -266,6 +272,7 @@ class World(object):
             self.collision_sensor.sensor,
             self.lane_invasion_sensor.sensor,
             self.gnss_sensor.sensor,
+            self.radar_sensor.sensor,
             self.player]
         for actor in actors:
             if actor is not None:
@@ -279,16 +286,7 @@ class World(object):
 
 class KeyboardControl(object):
     def __init__(self, world, start_in_autopilot):
-        self._autopilot_enabled = start_in_autopilot
-        if isinstance(world.player, carla.Vehicle):
-            self._control = carla.VehicleControl()
-            world.player.set_autopilot(self._autopilot_enabled)
-        elif isinstance(world.player, carla.Walker):
-            self._control = carla.WalkerControl()
-            self._autopilot_enabled = False
-            self._rotation = world.player.get_transform().rotation
-        else:
-            raise NotImplementedError("Actor type not supported")
+
         self._steer_cache = 0.0
         world.hud.notification("Press 'H' or '?' for help.", seconds=4.0)
 
@@ -723,20 +721,11 @@ class CameraManager(object):
         Attachment = carla.AttachmentType
         self._camera_transforms = [
             (carla.Transform(carla.Location(x=-5.5, z=2.5), carla.Rotation(pitch=8.0)), Attachment.SpringArm),
-            (carla.Transform(carla.Location(x=2.0, z=1.4)), Attachment.Rigid),
-            (carla.Transform(carla.Location(x=5.5, y=1.5, z=1.5)), Attachment.SpringArm),
-            (carla.Transform(carla.Location(x=-8.0, z=6.0), carla.Rotation(pitch=6.0)), Attachment.SpringArm),
-            (carla.Transform(carla.Location(x=-1, y=-bound_y, z=0.5)), Attachment.Rigid)]
+            (carla.Transform(carla.Location(x=2.0, z=1.4), carla.Rotation(pitch=-15.0)), Attachment.Rigid),
+            (carla.Transform(carla.Location(z=35.0), carla.Rotation(pitch=-80.0)), Attachment.Rigid)]
         self.transform_index = 1
         self.sensors = [
-            ['sensor.camera.rgb', cc.Raw, 'Camera RGB'],
-            ['sensor.camera.depth', cc.Raw, 'Camera Depth (Raw)'],
-            ['sensor.camera.depth', cc.Depth, 'Camera Depth (Gray Scale)'],
-            ['sensor.camera.depth', cc.LogarithmicDepth, 'Camera Depth (Logarithmic Gray Scale)'],
-            ['sensor.camera.semantic_segmentation', cc.Raw, 'Camera Semantic Segmentation (Raw)'],
-            ['sensor.camera.semantic_segmentation', cc.CityScapesPalette,
-             'Camera Semantic Segmentation (CityScapes Palette)'],
-            ['sensor.lidar.ray_cast', None, 'Lidar (Ray-Cast)']]
+            ['sensor.camera.rgb', cc.Raw, 'Camera RGB']]
         world = self._parent.get_world()
         bp_library = world.get_blueprint_library()
         for item in self.sensors:
@@ -827,7 +816,7 @@ class FrontCamera(object):
         self._parent = parent_actor
         Attachment = carla.AttachmentType
         # TODO 카메라 각도 설정
-        self.camera_transform = (carla.Transform(carla.Location(x=2.0, z=1.4), carla.Rotation(pitch=-15.0)),
+        self.camera_transform = (carla.Transform(carla.Location(x=1.0, z=2.0), carla.Rotation(pitch=-15.0)),
                                  Attachment.Rigid)
 
         world = self._parent.get_world()
@@ -862,6 +851,12 @@ class FrontCamera(object):
             return
         image.convert(carla.ColorConverter.Raw)
         ImitAgent.front_image = image
+
+        w = image_resize[1]
+        h = image_resize[0]
+        src = np.float32([[0, h], [w, h], [0, 0], [w, 0]])
+        dst = np.float32([[89, h], [111, h], [0, 0], [w, 0]])
+        M = cv2.getPerspectiveTransform(src, dst)
         if self.recording:
             # carla.Image 를 기존 manual_control.py.CameraManager._parse_image() 부분을 응용
             image.convert(cc.Raw)
@@ -874,4 +869,82 @@ class FrontCamera(object):
             image_pil = image_pil.resize((image_resize[1], image_resize[0]))  # 원하는 크기로 리사이즈
             # image_pil.save('output/%06d.png' % image.frame)
             np_image = np.array(image_pil, dtype=np.dtype("uint8"))
+
+            # bird-eye view transform
+            # https://nikolasent.github.io/opencv/2017/05/07/Bird%27s-Eye-View-Transformation.html
+            np_image = cv2.warpPerspective(np_image, M, (w, h))
+
             Recorder.image = np_image  # Recorder 로 이미지 전송
+
+
+# ==============================================================================
+# -- RadarSensor ---------------------------------------------------------------
+# ==============================================================================
+
+class RadarSensor(object):
+    def __init__(self, parent_actor, agent):
+        self.sensor = None
+        self._parent = parent_actor
+        self.agent = agent
+        self.velocity_range = 7.5  # m/s
+        world = self._parent.get_world()
+        self.debug = world.debug
+        bp = world.get_blueprint_library().find('sensor.other.radar')
+        bp.set_attribute('horizontal_fov', str(80))
+        bp.set_attribute('vertical_fov', str(20))
+        bp.set_attribute('range', str(50))
+        bp.set_attribute('points_per_second', str(2000))
+        rad_location = carla.Location(x=2.0, z=1.0)
+        rad_rotation = carla.Rotation(pitch=3)
+        rad_transform = carla.Transform(rad_location, rad_rotation)
+        self.sensor = world.spawn_actor(bp, rad_transform, attach_to=self._parent,
+                                        attachment_type=carla.AttachmentType.Rigid)
+        # We need a weak reference to self to avoid circular reference.
+        weak_self = weakref.ref(self)
+        self.sensor.listen(lambda radar_data: RadarSensor._Radar_callback(weak_self, radar_data))
+
+    @staticmethod
+    def _Radar_callback(weak_self, radar_data):
+        # TODO 레이더 쓰는 방법 계속 하기
+        self = weak_self()
+        if not self:
+            return
+        # To get a numpy [[vel, altitude, azimuth, depth],...[,,,]]:
+        # points = np.frombuffer(radar_data.raw_data, dtype=np.dtype('f4'))
+        # points = np.reshape(points, (len(radar_data), 4))
+
+        if self.agent is not None:
+            self.agent.set_radar_data(radar_data)
+
+        current_rot = radar_data.transform.rotation
+        for detect in radar_data:
+            azi = math.degrees(detect.azimuth)
+            alt = math.degrees(detect.altitude)
+            # The 0.25 adjusts a bit the distance so the dots can
+            # be properly seen
+            fw_vec = carla.Vector3D(x=detect.depth - 0.25)
+            transform = carla.Transform(carla.Location(), carla.Rotation(
+                pitch=current_rot.pitch + alt,
+                yaw=current_rot.yaw + azi,
+                roll=current_rot.roll)).transform(fw_vec)
+            rotation = carla.Rotation(
+                pitch=current_rot.pitch + alt,
+                yaw=current_rot.yaw + azi,
+                roll=current_rot.roll)
+            norm_velocity = detect.velocity / self.velocity_range  # range [-1, 1]
+            r = 0
+            g = 0
+            b = 0
+
+            if detect.depth <= 10.0:
+                r = 255
+            # 신호등 인식 관련 -> yaw : -12 ~ 13 / pitch : 8 ~ 11
+            '''
+            if rotation.pitch <= 5.0:
+            self.debug.draw_point(
+                radar_data.transform.location + fw_vec,
+                size=0.075,
+                life_time=0.06,
+                persistent_lines=False,
+                color=carla.Color(r, g, b))
+            '''

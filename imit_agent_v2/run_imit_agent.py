@@ -107,6 +107,7 @@ def game_loop(args):
                                spawn_point.location.z))
 
         world.agent = agent
+        world.radar_sensor.agent = agent
 
         clock = pygame.time.Clock()
         while True:
