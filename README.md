@@ -26,7 +26,7 @@ for further information about Keyboard control or joystick(xbox one pad) control
 
 
 # Requirements
-- Carla 0.9.X (this code is based on 0.9.6)
+- Carla 0.9.X (this code is based on ~~0.9.6~~ now using 0.9.11 due to radar support)
 - PIL
 - pygame
 - numpy
