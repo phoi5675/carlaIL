@@ -3,6 +3,7 @@ import numpy as np
 import h5py
 import os
 import threading
+from PIL import Image
 
 
 class Recorder(object):
@@ -134,6 +135,22 @@ class Recorder(object):
         if len(Recorder.SAVE_DATA_ARY) < Recorder.DATA_LEN:
             Recorder.SAVE_DATA_ARY.append(DATA_ARY)
 
+        if agent is not None and agent.weird_reset_count >= 3:
+            _clear_save_ary()
+            print("reset save array")
+
+        # agent 속도 조절
+        if agent is not None:
+            file_path = os.getcwd() + '/' + path
+            c = len(os.listdir(file_path))
+
+            if c <= 100:
+                agent.set_target_speed(10 + 4 * (c * 0.09))
+            elif 100 < c <= 1000:
+                agent.set_target_speed(10 + 4 * ((c - 100) * 0.01))
+            elif 1000 < c < 1200:
+                agent.set_target_speed(10 + 4 * ((c - 1000) * 0.045))
+
         if len(Recorder.SAVE_IMG_ARY) == Recorder.DATA_LEN \
                 and len(Recorder.SAVE_DATA_ARY) == Recorder.DATA_LEN:
             _save_h5_file()
@@ -145,10 +162,3 @@ class Recorder(object):
             timer.start()
         else:
             timer.cancel()
-        '''
-        for _list in DATA_ARY:
-            print(_list, end=' ')
-        print('\n')
-        if Recorder.image is not None:  # 동기화 문제 때문에 image 가 None 상태 유지되는 경우 예방
-            Recorder.image.save('output/%.3f.png' % Recorder.platform_time)
-        '''

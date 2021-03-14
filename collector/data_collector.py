@@ -5,7 +5,8 @@ from game_collector import *
 from Recorder import *
 import argparse
 import pygame
-import threading
+import logging
+
 
 # ==============================================================================
 # -- find carla module ---------------------------------------------------------
@@ -45,6 +46,9 @@ def game_loop(args):
     world = None
     tick = True
     agent = None
+
+    fps = 30
+
     try:
         # 서버 연결
         client = carla.Client(args.host, args.port)
@@ -60,10 +64,10 @@ def game_loop(args):
         # set synchronous mode
         server_world = client.get_world()
         settings = server_world.get_settings()
-        # settings.synchronous_mode = True
-        # settings.fixed_delta_seconds = 0.05
+        settings.synchronous_mode = True
+        settings.fixed_delta_seconds = 1 / fps
 
-        # server_world.apply_settings(settings)
+        server_world.apply_settings(settings)
 
         world = World(server_world, hud, args)
 
@@ -73,21 +77,21 @@ def game_loop(args):
                 if args.controller is "joystick" else VehicleController(world, is_keyboard=True,
                                                                         start_in_autopilot=args.autopilot)
         elif args.collector_method == "automatic":
-            agent = BasicAgent(world.player, target_speed=25)
+            agent = BasicAgent(world.player, target_speed=30)
             spawn_point = world.map.get_spawn_points()[0]
-            agent.set_destination((spawn_point.location.x,
-                                   spawn_point.location.y,
-                                   spawn_point.location.z))
+            agent.set_destination((spawn_point.location.x, spawn_point.location.y, spawn_point.location.z))
             world.agent = agent
+            world.radar_sensor.agent = agent
 
         clock = pygame.time.Clock()
+
         while True:
             # tick_busy_loop(FPS) : 수직동기화랑 비슷한 tick() 함수
-            clock.tick_busy_loop(60)
+            clock.tick_busy_loop(fps)
             if controller.parse_events(client, world, clock):
                 return
             world.tick(clock)
-            # server_world.tick()  # 서버 시간 tick
+            server_world.tick()  # 서버 시간 tick
 
             # 화면 제외 다른 데이터 녹화
             if world.recording_enabled and tick:
@@ -111,10 +115,12 @@ def game_loop(args):
 
                 # 목표에 도착 한 경우, 새로운 WP 설정 -> random!
                 if agent.is_reached_goal():
-                    print("set new waypoint")
+                    '''
                     spawn_point = world.map.get_spawn_points()
                     goal = random.choice(spawn_point) if spawn_point else carla.Transform()
                     agent.set_destination((goal.location.x, goal.location.y, goal.location.z))
+                    '''
+                    agent.reset_destination()
 
             world.render(display)
             pygame.display.flip()
@@ -155,7 +161,7 @@ def main():
     argparser.add_argument(
         '--res',
         metavar='WIDTHxHEIGHT',
-        default='1280x720',
+        default='800x600',
         help='window resolution (default: 1280x720)')
     argparser.add_argument(
         '--filter',
@@ -174,8 +180,7 @@ def main():
         help='Gamma correction of the camera (default: 2.2)')
     argparser.add_argument(
         '--path',
-        default='output_human/',
-        required=True,
+        default='output/',
         help='path for saving data')
     argparser.add_argument(
         '--controller',
