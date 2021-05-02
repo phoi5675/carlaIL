@@ -287,6 +287,7 @@ class World(object):
 class KeyboardControl(object):
     def __init__(self, world, start_in_autopilot):
 
+        self._autopilot_enabled = False
         self._steer_cache = 0.0
         world.hud.notification("Press 'H' or '?' for help.", seconds=4.0)
 
@@ -314,20 +315,7 @@ class KeyboardControl(object):
                 elif K_0 < event.key <= K_9:
                     world.camera_manager.set_sensor(event.key - 1 - K_0)
                 elif event.key == K_t:
-                    sp = world.map.get_spawn_points()
-                    rand_sp = random.choice(sp)
-                    world.player.set_transform(rand_sp)
-
-                    control_reset = carla.VehicleControl()
-                    control_reset.steer, control_reset.throttle, control_reset.brake = 0.0, 0.0, 0.0
-                    world.player.apply_control(control_reset)
-
-                    time.sleep(0.2)
-
-                    spawn_point = world.map.get_spawn_points()[0]
-                    world.agent.set_destination((spawn_point.location.x,
-                                                 spawn_point.location.y,
-                                                 spawn_point.location.z))
+                    world.agent.reset_destination()
                 elif event.key == K_r:
                     # R key 의 recording_enabled bool toggle 기능만 남겨두자
                     # world.camera_manager.toggle_recording()
@@ -348,7 +336,6 @@ class KeyboardControl(object):
                     currentIndex = world.camera_manager.index
                     world.destroy_sensors()
                     # disable autopilot
-                    self._autopilot_enabled = False
                     world.player.set_autopilot(self._autopilot_enabled)
                     world.hud.notification("Replaying file 'manual_recording.rec'")
                     # replayer
@@ -460,7 +447,8 @@ class HUD(object):
             'Location:% 20s' % ('(% 5.1f, % 5.1f)' % (t.location.x, t.location.y)),
             'GNSS:% 24s' % ('(% 2.6f, % 3.6f)' % (world.gnss_sensor.lat, world.gnss_sensor.lon)),
             'Height:  % 18.0f m' % t.location.z,
-            'HCL:  %22s' % world.agent.get_high_level_command(convert=False),
+            'HLC:  %22s' % world.agent.get_high_level_command(convert=False),
+            'steer: %22.5f' % c.steer,
             '']
         if isinstance(c, carla.VehicleControl):
             self._info_text += [
@@ -813,16 +801,16 @@ class FrontCamera(object):
     def __init__(self, parent_actor):
         self.recording = False
         self.sensor = None
+        self.agent = None
         self._parent = parent_actor
         Attachment = carla.AttachmentType
         # TODO 카메라 각도 설정
-        self.camera_transform = (carla.Transform(carla.Location(x=1.0, z=2.0), carla.Rotation(pitch=-15.0)),
+        self.camera_transform = (carla.Transform(carla.Location(x=2.0, z=1.4), carla.Rotation(pitch=-15.0)),
                                  Attachment.Rigid)
 
         world = self._parent.get_world()
         self.blueprint = world.get_blueprint_library().find('sensor.camera.rgb')
         self.blueprint.set_attribute('role_name', 'front_camera')  # role_name 설정
-        self.blueprint.set_attribute('sensor_tick', str(0.05))
         self.blueprint.set_attribute('image_size_x', str(800))
         self.blueprint.set_attribute('image_size_y', str(600))
         self.blueprint.set_attribute('fov', str(100))
@@ -845,36 +833,13 @@ class FrontCamera(object):
     @staticmethod
     def _parse_image(weak_self, image):
         self = weak_self()
-        image_cut = [115, 510]
-        image_resize = (88, 200, 3)
+
         if not self:
             return
-        image.convert(carla.ColorConverter.Raw)
-        ImitAgent.front_image = image
-
-        w = image_resize[1]
-        h = image_resize[0]
-        src = np.float32([[0, h], [w, h], [0, 0], [w, 0]])
-        dst = np.float32([[89, h], [111, h], [0, 0], [w, 0]])
-        M = cv2.getPerspectiveTransform(src, dst)
-        if self.recording:
-            # carla.Image 를 기존 manual_control.py.CameraManager._parse_image() 부분을 응용
-            image.convert(cc.Raw)
-            array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
-            array = np.reshape(array, (image.height, image.width, 4))
-            array = array[image_cut[0]:image_cut[1], :, :3]  # 필요 없는 부분을 잘라내고
-            array = array[:, :, ::-1]  # 채널 색상 순서 변경? 안 하면 색 이상하게 출력
-
-            image_pil = Image.fromarray(array.astype('uint8'), 'RGB')
-            image_pil = image_pil.resize((image_resize[1], image_resize[0]))  # 원하는 크기로 리사이즈
-            # image_pil.save('output/%06d.png' % image.frame)
-            np_image = np.array(image_pil, dtype=np.dtype("uint8"))
-
-            # bird-eye view transform
-            # https://nikolasent.github.io/opencv/2017/05/07/Bird%27s-Eye-View-Transformation.html
-            np_image = cv2.warpPerspective(np_image, M, (w, h))
-
-            Recorder.image = np_image  # Recorder 로 이미지 전송
+        if self.agent is not None:
+            image.convert(carla.ColorConverter.Raw)
+            self.agent.front_image = image
+            self.agent.traffic_light_image = image
 
 
 # ==============================================================================
@@ -905,7 +870,6 @@ class RadarSensor(object):
 
     @staticmethod
     def _Radar_callback(weak_self, radar_data):
-        # TODO 레이더 쓰는 방법 계속 하기
         self = weak_self()
         if not self:
             return
@@ -915,36 +879,3 @@ class RadarSensor(object):
 
         if self.agent is not None:
             self.agent.set_radar_data(radar_data)
-
-        current_rot = radar_data.transform.rotation
-        for detect in radar_data:
-            azi = math.degrees(detect.azimuth)
-            alt = math.degrees(detect.altitude)
-            # The 0.25 adjusts a bit the distance so the dots can
-            # be properly seen
-            fw_vec = carla.Vector3D(x=detect.depth - 0.25)
-            transform = carla.Transform(carla.Location(), carla.Rotation(
-                pitch=current_rot.pitch + alt,
-                yaw=current_rot.yaw + azi,
-                roll=current_rot.roll)).transform(fw_vec)
-            rotation = carla.Rotation(
-                pitch=current_rot.pitch + alt,
-                yaw=current_rot.yaw + azi,
-                roll=current_rot.roll)
-            norm_velocity = detect.velocity / self.velocity_range  # range [-1, 1]
-            r = 0
-            g = 0
-            b = 0
-
-            if detect.depth <= 10.0:
-                r = 255
-            # 신호등 인식 관련 -> yaw : -12 ~ 13 / pitch : 8 ~ 11
-            '''
-            if rotation.pitch <= 5.0:
-            self.debug.draw_point(
-                radar_data.transform.location + fw_vec,
-                size=0.075,
-                life_time=0.06,
-                persistent_lines=False,
-                color=carla.Color(r, g, b))
-            '''

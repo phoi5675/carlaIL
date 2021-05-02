@@ -11,13 +11,18 @@ waypoints and avoiding other vehicles.
 The agent also responds to traffic lights. """
 
 import tensorflow as tf
+
 import numpy as np
 from PIL import Image
-import scipy
 import os
 import sys
 import math
+import random
 import cv2
+import time
+from network import Network
+import tensorflow_yolov3.carla.utils as utils
+
 
 # ==============================================================================
 # -- add PythonAPI for release mode --------------------------------------------
@@ -34,7 +39,6 @@ from agents.navigation.agent import Agent, AgentState
 from agents.navigation.local_planner import LocalPlanner
 from agents.navigation.global_route_planner import GlobalRoutePlanner
 from agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
-from imitation_learning_network import load_imitation_learning_network
 from agents.navigation.local_planner import RoadOption
 
 
@@ -43,9 +47,8 @@ class ImitAgent(Agent):
     BasicAgent implements a basic agent that navigates scenes to reach a given
     target destination. This agent respects traffic lights and other vehicles.
     """
-    front_image = None
 
-    def __init__(self, vehicle, avoid_stopping, target_speed=20, memory_fraction=0.25, image_cut=[220, 600]):
+    def __init__(self, vehicle, target_speed=20, image_cut=[115, 510]):
         """
 
         :param vehicle: actor to apply to local planner logic onto
@@ -62,7 +65,7 @@ class ImitAgent(Agent):
         self._local_planner = LocalPlanner(
             self._vehicle, opt_dict={'target_speed': target_speed,
                                      'lateral_control_dict': args_lateral_dict})
-        self._hop_resolution = 0.2
+        self._hop_resolution = 1.0
         self._path_seperation_hop = 3
         self._path_seperation_threshold = 1.0
         self._target_speed = target_speed
@@ -73,89 +76,47 @@ class ImitAgent(Agent):
         self._radar_data = None
         self._obstacle_ahead = False
 
-        # load tf network model
-        self.dropout_vec = [1.0] * 8 + [0.7] * 2 + [0.5] * 2 + [0.5] * 1 + [0.5, 1.] * 7
+        # load network
+        g1 = tf.Graph()
+        g2 = tf.Graph()
 
-        config_gpu = tf.ConfigProto()  # tf 설정 프로토콜인듯?
-
-        # GPU to be selected, just take zero , select GPU  with CUDA_VISIBLE_DEVICES
-
-        config_gpu.gpu_options.visible_device_list = '0'  # GPU >= 2 일 때, 첫 번째 GPU만 사용
-
-        config_gpu.gpu_options.per_process_gpu_memory_fraction = memory_fraction  # memory_fraction % 만큼만 gpu vram 사용
-
-        self._image_size = (88, 200, 3)  # 아마 [세로, 가로, 차원(RGB)] 인듯?
-        self._avoid_stopping = avoid_stopping
-
-        self._sess = tf.Session(config=config_gpu)  # 작업을 위한 session 선언
-
-        with tf.device('/cpu:0'):  # 수동으로 device 배치 / default : '/gpu:0'
-            # tf.placeholder(dtype, shape, name) 형태로 shape에 데이터를 parameter로 전달
-            self._input_images = tf.placeholder("float", shape=[None, self._image_size[0],
-                                                                self._image_size[1],
-                                                                self._image_size[2]],
-                                                name="input_image")
-
-            self._input_data = []
-
-            # input control 종류가 4가지니까 [None, 4]로 지정?
-            self._input_data.append(tf.placeholder(tf.float32,
-                                                   shape=[None, 6], name="input_control"))
-
-            self._input_data.append(tf.placeholder(tf.float32,
-                                                   shape=[None, 1], name="input_speed"))
-
-            # dropout vector 값. 아마 신경망이랑 관련 있는듯
-            self._dout = tf.placeholder("float", shape=[len(self.dropout_vec)])
-
-        with tf.name_scope("Network"):  # 아래의 network_tensor 가 Network 아래의 신경망임을 명시 -> Network/network_tensor 의 형태
-            # 여기에 있는 load_imitation_learning_network 가 신경망 자체
-            self._network_tensor = load_imitation_learning_network(self._input_images,
-                                                                   self._input_data,
-                                                                   self._image_size, self._dout)
-
-        import os
-        dir_path = os.path.dirname(__file__)
-
-        self._models_path = dir_path + '/model/'
-
-        # 그래프 초기화
-        # tf.reset_default_graph()
-
-        # 변수 초기화 -> 작업 전 명시적으로 수행 / session 실행
-        self._sess.run(tf.global_variables_initializer())
-
-        self.load_model()
+        with g1.as_default():
+            self.drive_network = Network(model_name='Network', model_dir='/model_drive/')
+        with g2.as_default():
+            self.lanechange_network = Network(model_name='Lanechange', model_dir='/model_lanechange/')
 
         self._image_cut = image_cut
+        self._image_size = (88, 200, 3)  # 아마 [세로, 가로, 차원(RGB)] 인듯?
 
-    def load_model(self):
-        # 이전에 학습한 결과 로드
-        variables_to_restore = tf.global_variables()
+        self.front_image = None
 
-        # 모델, 파라미터 저장
-        saver = tf.train.Saver(variables_to_restore, max_to_keep=0)
+        # traffic light detection
+        self.return_elements = ["input/input_data:0", "pred_sbbox/concat_2:0",
+                                "pred_mbbox/concat_2:0", "pred_lbbox/concat_2:0"]
+        path = os.path.dirname(os.path.abspath(__file__))
+        self.pb_file = os.path.join(path, "tensorflow_yolov3/yolov3_coco.pb")
+        self.num_classes = 5
+        self.traffic_image_input_size = 256
+        self.tf_graph = tf.Graph()
+        self.return_tensors = utils.read_pb_return_tensors(self.tf_graph, self.pb_file, self.return_elements)
+        self.traffic_light_image = None
+        self._is_traffic_light_in_distance = False
+        self.bounding_boxes = None
+        self.traffic_light_duration = 1.5
+        self.traffic_light_detected_time = 0.0
+        self.traffic_sess = tf.Session(graph=self.tf_graph)
 
-        if not os.path.exists(self._models_path):
-            raise RuntimeError('failed to find the models path')
-
-        # checkpoint 가 존재하는 경우 로드
-        ckpt = tf.train.get_checkpoint_state(self._models_path)
-        if ckpt:
-            print('Restoring from ', ckpt.model_checkpoint_path)
-            saver.restore(self._sess, ckpt.model_checkpoint_path)
-        else:
-            ckpt = 0
-
-        return ckpt
-
-    def set_destination(self, location):
+    def set_destination(self, location, start_loc=None):
         """
         This method creates a list of waypoints from agent's position to destination location
         based on the route returned by the global router
         """
 
-        start_waypoint = self._map.get_waypoint(self._vehicle.get_location())
+        if start_loc is not None:
+            start_waypoint = self._map.get_waypoint(carla.Location(start_loc[0], start_loc[1], start_loc[2]))
+        else:
+            start_waypoint = self._map.get_waypoint(self._vehicle.get_location())
+
         end_waypoint = self._map.get_waypoint(
             carla.Location(location[0], location[1], location[2]))
 
@@ -164,7 +125,7 @@ class ImitAgent(Agent):
 
         self._local_planner.set_global_plan(route_trace)
 
-        self._local_planner.change_intersection_hcl()
+        self._local_planner.change_intersection_hcl(enter_hcl_len=5, exit_hcl_len=7)
 
     def _trace_route(self, start_waypoint, end_waypoint):
         """
@@ -201,7 +162,7 @@ class ImitAgent(Agent):
         speed = math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)  # use m/s
         self._speed = speed * 3.6  # use km/s
 
-        control = self._compute_action(ImitAgent.front_image, speed, direction)
+        control = self._compute_action(self.front_image, speed, direction)
         return control
 
     def _compute_action(self, rgb_image, speed, direction=None):
@@ -220,85 +181,39 @@ class ImitAgent(Agent):
                                                       self._image_size[1]])
         '''
 
-        image_cut = [230, 480, 160, 640]
-        image_resize = (88, 200, 3)
-        w = image_resize[1]
-        h = image_resize[0]
-
-        src = np.float32([[0, h], [w, h], [0, 0], [w, 0]])
-        dst = np.float32([[90, h], [110, h], [0, 0], [w, 0]])
-        M = cv2.getPerspectiveTransform(src, dst)
-
-        # carla.Image 를 기존 manual_control.py.CameraManager._parse_image() 부분을 응용
         rgb_image.convert(cc.Raw)
+
         array = np.frombuffer(rgb_image.raw_data, dtype=np.dtype("uint8"))
         array = np.reshape(array, (rgb_image.height, rgb_image.width, 4))
-        array = array[image_cut[0]:image_cut[1], image_cut[2]:image_cut[3], :3]  # 필요 없는 부분을 잘라내고
+        array = array[self._image_cut[0]:self._image_cut[1], :, :3]  # 필요 없는 부분을 잘라내고
         array = array[:, :, ::-1]  # 채널 색상 순서 변경? 안 하면 색 이상하게 출력
 
         image_pil = Image.fromarray(array.astype('uint8'), 'RGB')
-        image_pil = image_pil.resize((image_resize[1], image_resize[0]))  # 원하는 크기로 리사이즈
-        # image_pil.save('output/%06d.png' % image.frame)
-        np_image = np.array(image_pil, dtype=np.dtype("uint8"))
-
-        # bird-eye view transform
-        # https://nikolasent.github.io/opencv/2017/05/07/Bird%27s-Eye-View-Transformation.html
-        np_image = cv2.warpPerspective(np_image, M, (w, h))
-
-        np_image = cv2.Canny(np_image, 20, 60)
-
-        # masking to extract region of interest(ROI)
-        pts = np.array([[0, 0], [0, h], [90, h], [80, 45],
-                        [120, 45], [110, h], [w, h], [w, 0]], dtype=np.int32)
-        cv2.fillPoly(np_image, [pts], (0, 0, 0))
-
-        # grayscale to rgb
-        image_input = cv2.cvtColor(np_image, cv2.COLOR_GRAY2RGB)
+        image_pil = image_pil.resize((self._image_size[1], self._image_size[0]))  # 원하는 크기로 리사이즈
+        image_input = np.array(image_pil, dtype=np.dtype("uint8"))
 
         image_input = image_input.astype(np.float32)
         image_input = np.multiply(image_input, 1.0 / 255.0)
 
-        image = Image.fromarray(np_image)
-        import random
-        # image.save('output/%.3f.png' % random.uniform(0, 1000))
+        if direction == RoadOption.CHANGELANELEFT or direction == RoadOption.CHANGELANERIGHT:
+            steer, acc, brake = self._compute_function(image_input, speed, direction, self.lanechange_network)
+        else:
+            steer, acc, brake = self._compute_function(image_input, speed, direction, self.drive_network)
 
-        steer, acc, brake = self._control_function(image_input, speed, direction, self._sess)
-
-        # This a bit biased, but is to avoid fake breaking
-        if brake < 0.1:
-            brake = 0.0
-
-        if acc > brake:
-            brake = 0.0
+        '''
+        if self._speed >= 25:
+            acc = 0
+        '''
 
         self.run_radar()
-        if self._obstacle_ahead:
+        self.traffic_light_detection()
+
+        if self._obstacle_ahead or self.is_traffic_light_ahead():
             brake = 1.0
+            acc = 0.0
         else:
             brake = 0.0
-        '''
-        # We limit speed to 35 km/h to avoid
-        if speed > 25.0 and brake == 0.0:
-            acc = 0.0
-        '''
-        '''
-        # remove steering noise
-        if steer <= -1:
-            steer = -1
-        elif steer >= 1:
-            steer = 1
 
-        if direction is RoadOption.LEFT and steer >= 0.3:
-            steer = 0.3
-        elif direction is RoadOption.RIGHT and steer <= -0.3:
-            steer = -0.3
-        elif direction is RoadOption.STRAIGHT or direction is RoadOption.LANEFOLLOW:
-            if steer <= -0.4:
-                steer = 0.4
-            elif steer >= 0.4:
-                steer = 0.4
-        '''
-        
         control = carla.VehicleControl()
         control.steer = float(steer)
         control.throttle = float(acc)
@@ -309,18 +224,18 @@ class ImitAgent(Agent):
 
         return control
 
-    def _control_function(self, image_input, speed, control_input, sess):
+    def _compute_function(self, image_input, speed, control_input, network):
 
-        branches = self._network_tensor
-        x = self._input_images
-        dout = self._dout
-        input_speed = self._input_data[1]
+        branches = network.network_tensor
+        x = network.input_images
+        dout = network.dout
+        input_speed = network.input_data[1]
 
         image_input = image_input.reshape(
-            (1, self._image_size[0], self._image_size[1], self._image_size[2]))
+            (1, network.image_size[0], network.image_size[1], network.image_size[2]))
 
         # Normalize with the maximum speed from the training set ( 90 km/h)
-        speed = np.array(speed * 1.0)
+        speed = np.array(speed)
 
         speed = speed.reshape((1, 1))
 
@@ -333,38 +248,21 @@ class ImitAgent(Agent):
         elif control_input == RoadOption.LANEFOLLOW:
             all_net = branches[3]
         elif control_input == RoadOption.CHANGELANELEFT:
-            all_net = branches[4]
+            all_net = branches[2]
         elif control_input == RoadOption.CHANGELANERIGHT:
-            all_net = branches[5]
+            all_net = branches[3]
         else:
             all_net = branches[3]
-            print("else")
 
-        feedDict = {x: image_input, input_speed: speed, dout: [1] * len(self.dropout_vec)}
+        feedDict = {x: image_input, input_speed: speed, dout: [1] * len(network.dropout_vec)}
 
-        output_all = sess.run(all_net, feed_dict=feedDict)
+        output_all = network.sess.run(all_net, feed_dict=feedDict)
 
         predicted_steers = (output_all[0][0])
 
         predicted_acc = (output_all[0][1])
 
         predicted_brake = (output_all[0][2])
-
-        if self._avoid_stopping:
-            predicted_speed = sess.run(branches[6], feed_dict=feedDict)
-            predicted_speed = predicted_speed[0][0]
-            real_speed = speed * 25.0
-
-            real_predicted = predicted_speed * 25.0
-            if real_speed < 2.0 and real_predicted > 3.0:
-                # If (Car Stooped) and
-                #  ( It should not have stopped, use the speed prediction branch for that)
-
-                predicted_acc = 1 * (5.6 / 25.0 - speed) + predicted_acc
-
-                predicted_brake = 0.0
-
-                predicted_acc = predicted_acc[0][0]
 
         return predicted_steers, predicted_acc, predicted_brake
 
@@ -423,6 +321,8 @@ class ImitAgent(Agent):
             return False
         current_rot = self._radar_data.transform.rotation
         self._obstacle_ahead = False
+        if time.time() - self.traffic_light_detected_time > self.traffic_light_duration:
+            self._is_traffic_light_in_distance = False
 
         for detect in self._radar_data:
             azi = math.degrees(detect.azimuth)
@@ -435,3 +335,91 @@ class ImitAgent(Agent):
 
             if self.is_obstacle_ahead(rotation, detect):
                 self._obstacle_ahead = True
+
+            if -8 <= azi <= 8 and 2 <= alt <= 10 and 20 <= detect.depth <= 40:
+                self._is_traffic_light_in_distance = True
+                self.traffic_light_detected_time = time.time()
+
+    def reset_destination(self):
+        sp = self._map.get_spawn_points()
+        rand_sp = random.choice(sp)
+        self._vehicle.set_transform(rand_sp)
+
+        control_reset = carla.VehicleControl()
+        control_reset.steer, control_reset.throttle, control_reset.brake = 0.0, 0.0, 0.0
+        self._vehicle.apply_control(control_reset)
+
+        spawn_point = random.choice(self._map.get_spawn_points())
+        self.set_destination((spawn_point.location.x, spawn_point.location.y, spawn_point.location.z),
+                             start_loc=(rand_sp.location.x, rand_sp.location.y, rand_sp.location.z))
+
+    def traffic_light_detection(self):
+        if self.traffic_light_image is None:
+            return
+
+        image_cut = [0, 256, 272, 528]
+        array = np.frombuffer(self.traffic_light_image.raw_data, dtype=np.dtype("uint8"))
+        array = np.reshape(array, (self.traffic_light_image.height, self.traffic_light_image.width, 4))
+
+        frame_size = (self.traffic_image_input_size, self.traffic_image_input_size)
+        array = array[image_cut[0]:image_cut[1], image_cut[2]:image_cut[3], :3]
+        array = array[:, :, ::-1]
+
+        image_pil = Image.fromarray(array.astype('uint8'), 'RGB')
+        # 원하는 크기로 리사이즈
+        image_pil = image_pil.resize((self.traffic_image_input_size, self.traffic_image_input_size))
+        # image_pil.save('output/%06f.png' % time.time())
+        np_image = np.array(image_pil, dtype=np.dtype("uint8"))
+
+        # mask out side
+        np_image[:, :int(self.traffic_image_input_size * 0.15)] = 0
+        np_image[:, int(self.traffic_image_input_size * 0.85):self.traffic_image_input_size] = 0
+        np_image[:int(self.traffic_image_input_size * 0.25)] = 0
+        np_image[int(self.traffic_image_input_size * 0.65):] = 0
+
+        image_raw = cv2.cvtColor(np_image, cv2.COLOR_BGR2RGB)
+        image_data = utils.image_preporcess(np.copy(image_raw),
+                                            [self.traffic_image_input_size, self.traffic_image_input_size])
+        image_data = image_data[np.newaxis, ...]
+
+        pred_sbbox, pred_mbbox, pred_lbbox = self.traffic_sess.run(
+            [self.return_tensors[1], self.return_tensors[2], self.return_tensors[3]],
+            feed_dict={self.return_tensors[0]: image_data})
+
+        pred_bbox = np.concatenate([np.reshape(pred_sbbox, (-1, 5 + self.num_classes)),
+                                    np.reshape(pred_mbbox, (-1, 5 + self.num_classes)),
+                                    np.reshape(pred_lbbox, (-1, 5 + self.num_classes))], axis=0)
+
+        bboxes = utils.postprocess_boxes(pred_bbox, frame_size, self.traffic_image_input_size,
+                                         score_threshold=0.6)
+        bboxes = utils.nms(bboxes, 0.45, method='nms')
+
+        self.bounding_boxes = bboxes
+
+    def is_traffic_light_ahead(self):
+        if self.bounding_boxes is None:
+            return False
+
+        if len(self.bounding_boxes) > 0 and self._is_traffic_light_in_distance and self._is_stop_line_ahead():
+            return True
+        else:
+            return False
+
+    def _is_stop_line_ahead(self):
+        if self.traffic_light_image is None:
+            return
+        slope = -12
+        threshold = int(max(0, slope * self._speed + 350))
+        image_cut = [threshold, 600, 320, 480]
+        image_resize = (88, 200, 3)
+
+        array = np.frombuffer(self.traffic_light_image.raw_data, dtype=np.dtype("uint8"))
+        array = np.reshape(array, (self.traffic_light_image.height, self.traffic_light_image.width, 4))
+        array = array[image_cut[0]:image_cut[1], image_cut[2]:image_cut[3], :3]  # 필요 없는 부분을 잘라내고
+        array = array[:, :, ::-1]  # 채널 색상 순서 변경? 안 하면 색 이상하게 출력
+
+        array = cv2.GaussianBlur(array, (7, 7), 0)
+        array = cv2.Canny(array, 80, 120)
+
+        ret = np.any(array > 0)
+        return ret

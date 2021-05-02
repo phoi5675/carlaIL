@@ -72,14 +72,48 @@ def get_actor_display_name(actor, truncate=250):
 
 
 # ==============================================================================
+# -- utils ======---------------------------------------------------------------
+# ==============================================================================
+import tensorflow_yolov3.carla.utils as utils
+from tensorflow_yolov3.carla.config import cfg
+
+
+def draw_bboxes(pygame, display, window_size, bboxes, show_label=True):
+    classes = utils.read_class_names(cfg.YOLO.CLASSES)
+    font_size = 10
+    font = pygame.font.Font('freesansbold.ttf', font_size)
+
+    bb_surface = pygame.Surface(window_size)
+    bb_surface.set_colorkey((0, 0, 0))
+
+    for i, bbox in enumerate(bboxes):
+        coor = np.array(bbox[:4], dtype=np.int32)
+        fontScale = 0.5
+        score = bbox[4]
+        class_ind = int(bbox[5])
+        bbox_color = (255, 0, 0)
+
+        rect = (coor[0] + 272, coor[1], coor[2] - coor[0], coor[3] - coor[1])
+        pygame.draw.rect(display, bbox_color, rect, 3)
+        #            cv2.rectangle(image, c1, c2, bbox_color, bbox_thick)
+
+        if show_label and score > 0.55:
+            bbox_mess = '%s: %.2f' % (classes[class_ind], score)
+            text = font.render(bbox_mess, True, bbox_color)
+            display.blit(text, (rect[0], rect[1] - 15))
+
+    display.blit(bb_surface, (0, 0))
+
+# ==============================================================================
 # -- game_loop() ---------------------------------------------------------
 # ==============================================================================
+
 
 def game_loop(args):
     pygame.init()
     pygame.font.init()
     world = None
-    tick_double_time = False  # delta_seconds 의 두 배 시간으로 녹화하게 만듦
+    fps = 30
 
     try:
         client = carla.Client(args.host, args.port)
@@ -91,16 +125,17 @@ def game_loop(args):
 
         server_world = client.get_world()
         settings = server_world.get_settings()
-        settings.fixed_delta_seconds = 0.05
+        # settings.synchronous_mode = True
+        # settings.fixed_delta_seconds = 1 / fps
 
         # set synchronous mode
-        # server_world.apply_settings(settings)
+        server_world.apply_settings(settings)
 
         hud = HUD(args.width, args.height)
         world = World(server_world, hud, args)
         controller = KeyboardControl(world, False)
 
-        agent = ImitAgent(world.player, args.avoid_stopping)
+        agent = ImitAgent(world.player)
         spawn_point = world.map.get_spawn_points()[0]
         agent.set_destination((spawn_point.location.x,
                                spawn_point.location.y,
@@ -108,19 +143,23 @@ def game_loop(args):
 
         world.agent = agent
         world.radar_sensor.agent = agent
+        world.front_camera.agent = agent
 
         clock = pygame.time.Clock()
         while True:
             # tick_busy_loop(FPS) : 수직동기화랑 비슷한 tick() 함수
-            clock.tick_busy_loop(60)
+            clock.tick_busy_loop(fps)
 
             if controller.parse_events(client, world, clock):
                 return
 
             world.tick(clock)
-            # server_world.tick()  # 서버 시간 tick
+            if settings.synchronous_mode:
+                server_world.tick()  # 서버 시간 tick
 
             world.render(display)
+            if agent.bounding_boxes is not None:
+                draw_bboxes(pygame, display, (args.width, args.height), agent.bounding_boxes)
             pygame.display.flip()
 
             control = agent.run_step()
@@ -189,19 +228,9 @@ def main():
         type=float,
         help='Gamma correction of the camera (default: 2.2)')
     argparser.add_argument(
-        '--autopilot',
-        action='store_true',
-        help='enable autopilot')
-    argparser.add_argument(
         '--path',
         default='output/',
         help='path for saving data')
-    argparser.add_argument(
-        '--avoid-stopping',
-        default=True,
-        action='store_false',
-        help=' Uses the speed prediction branch to avoid unwanted agent stops'
-    )
     args = argparser.parse_args()
 
     args.width, args.height = [int(x) for x in args.res.split('x')]

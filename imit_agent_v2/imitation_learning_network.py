@@ -4,7 +4,6 @@ import numpy as np
 
 import tensorflow as tf
 
-
 def weight_ones(shape, name):
     initial = tf.constant(1.0, shape=shape, name=name)
     return tf.Variable(initial)
@@ -12,7 +11,7 @@ def weight_ones(shape, name):
 
 def weight_xavi_init(shape, name):
     initial = tf.get_variable(name=name, shape=shape,
-                              initializer=tf.contrib.layers.xavier_initializer())
+                              initializer=tf.keras.initializers.glorot_normal())
     return initial
 
 
@@ -70,6 +69,7 @@ class Network(object):
 
     def bn(self, x):
         self._count_bn += 1
+
         return tf.contrib.layers.batch_norm(x, is_training=False,
                                             updates_collections=None,
                                             scope='bn' + str(self._count_bn))
@@ -183,7 +183,6 @@ def load_imitation_learning_network(input_image, input_data, input_size, dropout
 
     """Start BRANCHING"""
     branch_config = [["Steer", "Gas", "Brake"], ["Steer", "Gas", "Brake"],
-                     ["Steer", "Gas", "Brake"], ["Steer", "Gas", "Brake"],
                      ["Steer", "Gas", "Brake"], ["Steer", "Gas", "Brake"], ["Speed"]]
 
     # Action a
