@@ -32,7 +32,11 @@ for further information about Keyboard control or joystick(xbox one pad) control
 - 'C' key : change weather
 
 # how to train model
-see 
+download [Imitation learning](https://github.com/merantix/imitation-learning)
+
+overwrite repo with files in imitation-learning-train/imitation/ in this repo
+
+to run the trainer, see readme file in link above and in imitation-learning-train/ in this repo.
 
 # how to run model
 see [benchmark_runner repo](https://github.com/phoi5675/benchmark-for-carla-imitation-learning)
