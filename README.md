@@ -45,3 +45,9 @@ this is the final version of our model.
 - pygame
 - numpy
 - h5py
+- tesnorflow==1.15.X or lower
+- CUDA 10.0(depends on tensorflow version)
+
+# known bugs
+- model using tensorflow(for rocm), AMD gpu and ROCm in Ubuntu 18.04 might not drive as expected. 
+this might be because I've tested on PC using Opencore EFI. running fine on windows and tensorflow-cpu in same environment or using Nvidia GPU(RTX 2080 super)
