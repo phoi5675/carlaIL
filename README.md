@@ -22,7 +22,7 @@ please see our paper for benchmark results(link in bottom).
 
 collector : collect data from carla based on [carla imitation learning](https://github.com/carla-simulator/imitation-learning)
 
-data order is same as above page, but the values may differ or not be collected.
+data order is same as link above, but the values may differ or not be collected.
 
 imit_agent : running trained model in 0.9.X. to run our model
 
@@ -32,19 +32,15 @@ imit_agent : running trained model in 0.9.X. to run our model
 
 now merged : data_collector.py, please see args to collect data manually or automatically.
 
-collected data will be saved in collecter/output/, named "data_#####.h5
-
-when you press 'R' key, which is toggle button for recording, it will begin collecting data.
-
-to change weather, use 'C'
-
-for further information about Keyboard control or joystick(xbox one pad) control, please see collector/game.py
-
 # how to collect data
 - create "output" folder in collector/
 - run data_collector.py
 - 'R' key : toggle recording
 - 'C' key : change weather
+
+collected data will be saved in collecter/output/, named "data_#####.h5
+
+for further information about Keyboard control or joystick(xbox one pad) control, please see collector/game.py
 
 # how to train model
 download [Imitation learning](https://github.com/merantix/imitation-learning)
