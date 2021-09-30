@@ -2,7 +2,7 @@
 
 autonomous driving model with multiple NNs using 1 front-facing camera and radar implemented on CARLA Simulator(0.9.11).
 
-NNs is based on [End-to-end Driving via Conditional Imitation Learning
+NNs are based on [End-to-end Driving via Conditional Imitation Learning
 ](https://arxiv.org/abs/1710.02410) and [YOLOv3 implemented by Tensorflow 1.X](https://github.com/YunYang1994/tensorflow-yolov3)
 
 ## sensors used 
