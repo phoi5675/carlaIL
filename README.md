@@ -1,7 +1,22 @@
 # carlaIL
 
+autonomous driving model with multiple NNs using 1 front-facing camera and radar implemented on CARLA Simulator(0.9.11).
 
-**please be aware that there are some bugs**
+NNs is based on [End-to-end Driving via Conditional Imitation Learning
+](https://arxiv.org/abs/1710.02410) and [YOLOv3 implemented by Tensorflow 1.X](https://github.com/YunYang1994/tensorflow-yolov3)
+
+## sensors used 
+- 1 front-facing rgb camera
+- 1 front-facing radar
+
+## what this driving model can do
+- basic maneuvers; follow lanes, turn left / right or go straight at intersection, changing lanes using high-level command in CARLA
+- detect red traffic lights and stop at stop at stop line.
+- emergency braking(only for obstacles ahead)
+
+because of the data collecting method and the limitation of based model, it can drive, **but not well**.
+
+please see our paper for benchmark results(link in bottom).
 
 # descriptions
 
@@ -55,3 +70,18 @@ this is the final version of our model.
 # known bugs
 - model using tensorflow(for rocm), AMD gpu and ROCm in Ubuntu 18.04 might not drive as expected. 
 this might be because I've tested on PC using Opencore EFI. running fine on windows and tensorflow-cpu in same environment or using Nvidia GPU(RTX 2080 super)
+- there might be unexpected bugs :(
+
+# acknowledgements
+- carla for [CARLA Simulator](https://carla.org/)
+- project's base autonomous driving model for [End-to-end Driving via Conditional Imitation Learning](https://arxiv.org/abs/1710.02410)
+- traffic light detection model for [YOLOv3 implemented by Tensorflow 1.X](https://github.com/YunYang1994/tensorflow-yolov3)
+
+# paper
+this is a project for undergraduate thesis, but the paper hasn't released on my university's library.
+
+instead, I've uploaded on google drive.
+
+[paper(korean)](https://drive.google.com/file/d/1Po2KdzNZ0QiEM0sU_TtCc9wesyc2q1hN/view?usp=sharing)
+
+[presentation video(korean)](https://drive.google.com/file/d/13PeE7181RUUNDKQD5I01NV9hP1l8SX2M/view?usp=sharing)
