@@ -78,6 +78,6 @@ this is a project for undergraduate thesis, but the paper hasn't released on my 
 
 instead, I've uploaded on google drive.
 
-[paper(korean)](https://drive.google.com/file/d/1Po2KdzNZ0QiEM0sU_TtCc9wesyc2q1hN/view?usp=sharing)
+[paper(korean)](./paper.pdf)
 
-[presentation video(korean)](https://drive.google.com/file/d/13PeE7181RUUNDKQD5I01NV9hP1l8SX2M/view?usp=sharing)
+[presentation video(korean)](https://youtu.be/rHUGIgEqGIU)
